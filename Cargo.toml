@@ -1,0 +1,15 @@
+[package]
+name = "bevy_plot"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+# bevy = "0.6" #{path = "crates/bevy_fork" }
+
+bevy = { git = "https://github.com/bevyengine/bevy.git", rev = "33ef5b5039ce4bea9b33199c1e5649dc858a6d4c" }
+# lyon = "0.17.5"
+# flo_curves = "0.6"
+itertools-num = "0.1"
+bytemuck = "1.7"
