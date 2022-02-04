@@ -43,7 +43,8 @@ impl Plugin for MarkersPlugin {
             .add_event::<SpawnMarkersEvent>()
             .add_system(markers_setup)
             .add_system(move_markers)
-            .add_system(change_uni);
+            // .add_system(change_uni)
+            ;
     }
 }
 
@@ -53,8 +54,10 @@ pub struct SpawnMarkersEvent {
 }
 
 pub fn move_markers(
+    mut commands: Commands,
     mut change_canvas_material_event: EventReader<ChangeCanvasMaterialEvent>,
     mut spawn_markers_event: EventWriter<SpawnMarkersEvent>,
+    // query: Query<(Entity, &Handle<Plot>), With<MarkerUniform>>,
 ) {
     for event in change_canvas_material_event.iter() {
         // plot_points(&mut commands, &mut meshes, ys, &plot, &event.plot_handle)
@@ -62,6 +65,8 @@ pub fn move_markers(
             canvas_handle: event.canvas_material_handle.clone(),
             plot_handle: event.plot_handle.clone(),
         });
+
+        //
     }
 }
 
@@ -70,11 +75,10 @@ fn markers_setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut spawn_markers_event: EventReader<SpawnMarkersEvent>,
     // materials: ResMut<Assets<CanvasMaterial>>,
-    plots: Res<Assets<Plot>>,
+    mut plots: ResMut<Assets<Plot>>,
     query: Query<(Entity, &Handle<Plot>), With<MarkerUniform>>,
 ) {
     for event in spawn_markers_event.iter() {
-        //
         // TODO: sometimes the query works, but the deletion has already been done.
         // fix this please.
         for (entity, plot_handle) in query.iter() {
@@ -82,9 +86,8 @@ fn markers_setup(
                 commands.entity(entity).despawn();
             }
         }
-
         // let canvas = materials.get(&event.canvas_handle).unwrap();
-        let plot = plots.get(&event.plot_handle).unwrap();
+        let mut plot = plots.get_mut(&event.plot_handle).unwrap();
 
         let num_pts = 50;
 
@@ -94,10 +97,18 @@ fn markers_setup(
 
         let ys = xs
             .iter()
-            .map(|x| Vec2::new(-*x, f(*x)))
+            .map(|x| Vec2::new(*x, f(*x)))
             .collect::<Vec<Vec2>>();
 
-        plot_points(&mut commands, &mut meshes, ys, &plot, &event.plot_handle)
+        println!(" ys: {:?}", ys[0].x);
+
+        plot_points(
+            &mut commands,
+            &mut meshes,
+            ys,
+            &mut plot,
+            &event.plot_handle,
+        )
     }
 }
 
@@ -114,17 +125,20 @@ pub fn plot_points(
     ys: Vec<Vec2>,
     // plot: &mut Plot,
     // canvas: &CanvasMaterial,
-    plot: &Plot,
+    plot: &mut Plot,
     plot_handle: &Handle<Plot>,
 ) {
     let ys_world = plot.plot_to_world(&ys);
+    let quad_size = 30.0;
+
+    println!("plot_points: ys_world: {:?}", ys_world[0].x);
 
     commands
         .spawn_bundle((
             // MarkerMesh2d::default(),
             // Mesh2dHandle(meshes.add(mesh)),
             Mesh2dHandle(meshes.add(Mesh::from(shape::Quad {
-                size: Vec2::splat(30.0),
+                size: Vec2::splat(quad_size),
                 flip: false,
             }))),
             GlobalTransform::default(),
@@ -138,7 +152,7 @@ pub fn plot_points(
                         //
                         // TODO: take inner border into account
                         //
-                        position: Vec3::new(v.x, v.y, 0.0) - plot.position.extend(20.0),
+                        position: Vec3::new(v.x, v.y, 0.0) - plot.position.extend(20.0) * 1.0,
                         scale: 1.0,
                         color: Color::rgba(0.8, 0.6, 0.1, 1.0).as_rgba_f32(),
                     })
@@ -152,8 +166,9 @@ pub fn plot_points(
             hole_size: 1.0,
             zoom: 1.0,
             point_type: 4,
-            size_in_pixels: plot.size,
-            outer_border: plot.outer_border,
+            quad_size,
+            inner_canvas_size_in_pixels: plot.size / (1.0 + plot.outer_border),
+            // outer_border: plot.outer_border,
             canvas_position: plot.position,
         });
 }
@@ -208,8 +223,8 @@ pub struct MarkerUniform {
     pub hole_size: f32,
     pub zoom: f32,
     pub point_type: u32,
-    pub size_in_pixels: Vec2,
-    pub outer_border: Vec2,
+    pub quad_size: f32,
+    pub inner_canvas_size_in_pixels: Vec2,
     pub canvas_position: Vec2,
 }
 

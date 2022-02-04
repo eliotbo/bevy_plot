@@ -244,7 +244,7 @@ pub fn change_plot(
     mut release_all_event: EventWriter<ReleaseAllEvent>,
     mut update_plot_labels_event: EventWriter<UpdatePlotLabelsEvent>,
     mut windows: ResMut<Windows>,
-    mut change_canvas_material_event: EventWriter<ChangeCanvasMaterialEvent>,
+    // mut change_canvas_material_event: EventWriter<ChangeCanvasMaterialEvent>,
 ) {
     for (plot_entity, graph_sprite, plot_handle, material_handle) in graph_sprite_query.iter() {
         // println!("{:?}", "CHANGING SHADER");
@@ -321,11 +321,6 @@ pub fn change_plot(
 
                 graph_sprite.clicked_on_plot_corner(cursor.position, &mut commands, plot_entity);
             }
-
-            change_canvas_material_event.send(ChangeCanvasMaterialEvent {
-                plot_handle: plot_handle.clone(),
-                canvas_material_handle: material_handle.clone(),
-            });
         }
     }
 
@@ -372,7 +367,7 @@ pub fn adjust_graph_size(
     // mut windows: ResMut<Windows>,
     cursor: Res<Cursor>,
     mut update_labels_event: EventWriter<UpdatePlotLabelsEvent>,
-    mut change_canvas_material_event: EventWriter<ChangeCanvasMaterialEvent>,
+    // mut change_canvas_material_event: EventWriter<ChangeCanvasMaterialEvent>,
     //
 ) {
     for (
@@ -441,11 +436,6 @@ pub fn adjust_graph_size(
                 plot_handle: plot_handle.clone(),
                 plot_entity,
             });
-
-            change_canvas_material_event.send(ChangeCanvasMaterialEvent {
-                plot_handle: plot_handle.clone(),
-                canvas_material_handle: material_handle.clone(),
-            });
         }
     }
 }
@@ -453,7 +443,10 @@ pub fn adjust_graph_size(
 pub fn adjust_graph_axes(
     mut commands: Commands,
     mut query: QuerySet<(
-        QueryState<(Entity, &GraphSprite, &Handle<Plot>), (With<MoveAxes>, Without<Locked>)>,
+        QueryState<
+            (Entity, &GraphSprite, &Handle<Plot>, &Handle<CanvasMaterial>),
+            (With<MoveAxes>, Without<Locked>),
+        >,
         QueryState<
             (
                 Entity,
@@ -475,9 +468,10 @@ pub fn adjust_graph_axes(
 ) {
     // move axes using grab and drag
 
-    for (plot_entity, _graph_sprite, plot_handle) in query.q0().iter_mut() {
+    for (plot_entity, _graph_sprite, plot_handle, material_handle) in query.q0().iter_mut() {
         for mouse_move_event in mouse_motion_events.iter() {
             //
+            println!("MOUSE",);
 
             if let Some(plot) = plots.get_mut(plot_handle) {
                 //
@@ -488,7 +482,15 @@ pub fn adjust_graph_axes(
                     plot_handle: plot_handle.clone(),
                     plot_entity,
                 });
+
+                change_canvas_material_event.send(ChangeCanvasMaterialEvent {
+                    plot_handle: plot_handle.clone(),
+                    canvas_material_handle: material_handle.clone(),
+                });
             }
+
+            // do not allow more than one mouse event per frame
+            break;
         }
     }
 

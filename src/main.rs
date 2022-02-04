@@ -68,7 +68,7 @@ fn setup(
 
     let size = Vec2::new(777.0, 500.0) * 1.0;
 
-    let plot = Plot {
+    let mut plot = Plot {
         relative_mouse_pos: Vec2::new(0.4, 0.5),
 
         tick_period: Vec2::new(0.27, 0.22),
@@ -87,9 +87,12 @@ fn setup(
 
         size: size.clone(),
         outer_border: Vec2::new(0.03 * size.y / size.x, 0.03),
+        zero_world: Vec2::new(0.0, 0.0),
 
-        position: Vec2::new(65.0, 28.0) * 1.,
+        // position: Vec2::new(65.0, 28.0) * 1.,
+        position: Vec2::ZERO,
     };
+    plot.compute_zeros();
 
     let plot_handle = plots.add(plot.clone());
 

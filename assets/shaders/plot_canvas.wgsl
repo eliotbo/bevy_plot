@@ -140,7 +140,7 @@ fn even(uv: f32) -> f32 {
 }
 
 //////////////////////// sdfs //////////////////////////////////////
-// not used
+
 fn sdRoundedBox(p: vec2<f32>, b: vec2<f32>, r: vec4<f32>) -> f32 {
   var x = r.x;
   var y = r.y;

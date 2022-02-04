@@ -174,22 +174,25 @@ fn sdBox(p: vec2<f32>, b: vec2<f32>) -> f32 {
 }
 
 
-struct MarkersUniform {
+struct MarkerUniform {
     marker_size: f32;
     hole_size: f32;
     zoom: f32;
     point_type: u32;
+    quad_size: f32;
+    inner_canvas_size_in_pixels: float2;
+    canvas_position_in_pixels: float2;
 };
 
 [[group(2), binding(0)]]
-var<uniform> custom_uniform: MarkersUniform;
+var<uniform> uni: MarkerUniform;
 
 
 [[stage(fragment)]]
 fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
     // let width = 0.003 ;
     let width = 0.041 ;
-    let zoom = custom_uniform.zoom;
+    let zoom = uni.zoom;
     //  let zoom = 1.0;
     var w = width * zoom  ;
     var solid = width * zoom * 1.0 ;
@@ -199,9 +202,11 @@ fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
 
     var uv = in.uv - float2(0.5,0.5);
 
-    let marker_size = custom_uniform.marker_size;
+    var uv_in_pixels = float2(-uv.x, uv.y) * uni.quad_size - in.pos_scale.xy;
 
-    let point_type = i32(custom_uniform.point_type);
+    let marker_size = uni.marker_size;
+
+    let point_type = i32(uni.point_type);
     // let point_type = 8;
 
     // change the aliasing as a function of the zoom
@@ -229,8 +234,8 @@ fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
     // square -> 0
     if (point_type == 0) {
 
-      let r = cla(0.01, 0.3, 0.2 * custom_uniform.marker_size);
-      let side_size = cla(0.1, 0.45, 0.4 * custom_uniform.marker_size);
+      let r = cla(0.01, 0.3, 0.2 * uni.marker_size);
+      let side_size = cla(0.1, 0.45, 0.4 * uni.marker_size);
 
       let d = sdRoundedBox(uv, float2(side_size, side_size), float4(r, r, r, r));  
       let s = smoothStep(solid*0.0 , solid * 0.0 + w , d    );
@@ -241,7 +246,7 @@ fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
     // heart -> 1
     } else if (point_type == 1) {
 
-        let heart_size = cla(0.2, 0.6, 0.15 * custom_uniform.marker_size); 
+        let heart_size = cla(0.2, 0.6, 0.15 * uni.marker_size); 
         let w_heart = w / heart_size;
 
         let d = sdHeart((uv - float2(0.0, -heart_size * 0.9 + 0.15)) / heart_size + float2(0.0, 0.2));  
@@ -252,7 +257,7 @@ fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
     // rhombus -> 2
     } else if (point_type == 2) {
 
-        let size = cla(0.1, 0.4, 0.3 * custom_uniform.marker_size); 
+        let size = cla(0.1, 0.4, 0.3 * uni.marker_size); 
 
         let d = sdRhombus(uv, float2(size * 1.2, size * 0.8));
         let s = smoothStep(0.0  , w / circ_zoom, d   );
@@ -264,7 +269,7 @@ fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
 
         uv.y = -uv.y;
 
-        let size = cla(0.13, 0.5, 0.3 * custom_uniform.marker_size); 
+        let size = cla(0.13, 0.5, 0.3 * uni.marker_size); 
         
         let d = sdTriangleIsosceles(uv - float2(0.0, -size * 0.5) , float2(size * 0.7, size));
         let s = smoothStep(0.0  , 0.0  + w / circ_zoom, d   );
@@ -274,7 +279,7 @@ fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
     // star -> 4
     } else if (point_type == 4) {
 
-        let star_size = cla(0.05, 0.2, 0.1 * custom_uniform.marker_size); 
+        let star_size = cla(0.05, 0.2, 0.1 * uni.marker_size); 
 
         let d = sdStar(uv, star_size, u32(5), 0.35);
         let s = smoothStep(0.0  , 0.0  + w / circ_zoom, d   );
@@ -288,7 +293,7 @@ fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
     // moon -> 5
     } else if (point_type == 5) {
 
-        let moon_size = cla(0.3, 1.3,  custom_uniform.marker_size); 
+        let moon_size = cla(0.3, 1.3,  uni.marker_size); 
 
         let d = sdMoon(uv - float2(0.05 * (1.0 + moon_size * 0.7 ), 0.0), 0.3 * moon_size, 0.35 * moon_size, 0.35 * moon_size);
         let s = smoothStep(0.0  , 0.0  + w / circ_zoom, d   );
@@ -298,7 +303,7 @@ fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
     // cross -> 6
     } else if (point_type == 6) {
 
-        let cross_size = cla(0.1, 0.4,  0.25  *custom_uniform.marker_size); 
+        let cross_size = cla(0.1, 0.4,  0.25  *uni.marker_size); 
 
         let d = sdCross(uv, float2(cross_size, cross_size / 3.0));
         let s = smoothStep(0.0  , 0.0  + w / circ_zoom, d   );
@@ -309,7 +314,7 @@ fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
 
     // x -> 7
     } else if (point_type == 7) {
-         let ex_size = cla(0.15, 0.6,  0.3 * custom_uniform.marker_size); 
+         let ex_size = cla(0.15, 0.6,  0.3 * uni.marker_size); 
 
         let start_size = 0.1;
         let d = sdRoundedX(uv, ex_size, ex_size / 6.0);
@@ -320,7 +325,7 @@ fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
     // circles -> 8
     } else if (point_type == 8) {
 
-      let circle_size = cla(0.04, 0.45,  0.25 * custom_uniform.marker_size); 
+      let circle_size = cla(0.04, 0.45,  0.25 * uni.marker_size); 
 
       let r =  circle_size;
       let d = sdCircle(uv, float2(0.0,0.0), circle_size);  
@@ -329,11 +334,20 @@ fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
       out_col.a = out_col.a * (1.0 - s) ;
     }
 
-
     // tiny circle at exact location of data point
-    let dc = sdCircle(uv  , float2(0.0, 0.0 ), 0.025 * custom_uniform.hole_size );
-    let sc = smoothStep(0.0, w / circ_zoom * custom_uniform.hole_size , dc  );
+    let dc = sdCircle(uv  , float2(0.0, 0.0 ), 0.025 * uni.hole_size );
+    let sc = smoothStep(0.0, w / circ_zoom * uni.hole_size , dc  );
     out_col = mix(out_col, float4(0.0,0.3,0.3,1.0) , 1.0 - sc) ;
+
+    // mask with the canvas
+    let r = 0.02 * uni.inner_canvas_size_in_pixels.x;
+    let d = sdRoundedBox(
+        uv_in_pixels + uni.canvas_position_in_pixels, 
+        uni.inner_canvas_size_in_pixels / 2.0 - 1.0, float4(r,r,r,r)
+    );
+
+    let s = smoothStep(0.0, 0.1, d );
+    out_col = mix(out_col, float4(0.0,0.3,0.3,0.0) ,  s) ;
 
     return out_col;
 
