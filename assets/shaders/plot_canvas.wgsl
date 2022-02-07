@@ -364,6 +364,25 @@ fn fragment(in: VertexOutput) -> [[location(0)]] vec4<f32> {
     rect = mix(rect, colBackground2, step(y_max, uv.y));
     /////////////////// borders /////////////////////////
 
+
+    /////////////////// mouse target /////////////////////////
+    // rect = draw_circle(rect, uv, rad*2. , black, ann, mate.mouse_pos);
+    let gray = vec4<f32>(1.0, 1.0, 1.0, 1.0) * 0.5;
+    // let aspect_ratio = mate.size.y / mate.size.x;
+    // let aspect_ratio = 1.0;
+    let target_thickness = 0.5 * mate.globals.zoom;
+    let pos_edges = edges - mate.position;
+
+    segment.start = float2( mate.mouse_pos.x, -pos_edges.y ) ;
+    segment.end = float2(  mate.mouse_pos.x, pos_edges.y ) ;
+    rect = draw_segment(target_thickness , rect, in.uv  , segment, gray, bar_alpha) ;
+
+    segment.start = float2(-pos_edges.x,  mate.mouse_pos.y);
+    segment.end = float2( pos_edges.x,  mate.mouse_pos.y);
+    rect = draw_segment(target_thickness , rect, in.uv  , segment, gray, bar_alpha) ;
+    /////////////////// mouse target /////////////////////////
+
+
     /////////////////// contours /////////////////////////
     // segment.start = float2(x_min,  y_min);
     // segment.end = float2(x_max,  y_min) ;
@@ -372,7 +391,7 @@ fn fragment(in: VertexOutput) -> [[location(0)]] vec4<f32> {
     // segment.end = float2(0.5 * 0.975,  0.0) * mate.size.x / 1.0 ;
 
     let bah = mate.size / (1.0 + mate.outer_border );
-    let ax_thick = 0.8;
+    let ax_thick = 0.8 ;
 
     let r = 0.02 * bah.x;
     let d = sdRoundedBox(in.uv - mate.position,  bah / 2.0, float4(r,r,r,r));
@@ -408,7 +427,7 @@ fn fragment(in: VertexOutput) -> [[location(0)]] vec4<f32> {
     // bluish = bluish / bm;
 
         // // test
-    rect = draw_circle(rect, uv, rad*2., black, ann, mate.mouse_pos);
+    
     // ////////////////////////// Black points ///////////////////////////////////
 
 

@@ -28,154 +28,103 @@ use bevy::{
 };
 
 use bytemuck::{Pod, Zeroable};
-use itertools_num::linspace;
 
-use crate::canvas::*;
+// use crate::canvas::*;
 // use crate::canvas_actions::*;
+use crate::canvas::ChangeCanvasMaterialEvent;
 use crate::inputs::*;
+use crate::plot::*;
 use crate::util::*;
 
-pub struct MarkersPlugin;
+// TODOs:
+// 1) Modify the transform instead of spawning brand new entities
+// this way, the uniform will stay the same
+//
+// 2) Add a way to change the color of the plot.
+// Copilot, do it for me!
 
-impl Plugin for MarkersPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_plugin(MarkerMesh2dPlugin)
-            .add_event::<SpawnMarkersEvent>()
-            .add_system(markers_setup)
-            .add_system(move_markers)
-            // .add_system(change_uni)
-            ;
-    }
-}
-
-pub struct SpawnMarkersEvent {
-    pub canvas_handle: Handle<CanvasMaterial>,
-    pub plot_handle: Handle<Plot>,
-}
-
-pub fn move_markers(
-    mut commands: Commands,
-    mut change_canvas_material_event: EventReader<ChangeCanvasMaterialEvent>,
-    mut spawn_markers_event: EventWriter<SpawnMarkersEvent>,
-    // query: Query<(Entity, &Handle<Plot>), With<MarkerUniform>>,
-) {
-    for event in change_canvas_material_event.iter() {
-        // plot_points(&mut commands, &mut meshes, ys, &plot, &event.plot_handle)
-        spawn_markers_event.send(SpawnMarkersEvent {
-            canvas_handle: event.canvas_material_handle.clone(),
-            plot_handle: event.plot_handle.clone(),
-        });
-
-        //
-    }
-}
-
-fn markers_setup(
+pub fn markers_setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut spawn_markers_event: EventReader<SpawnMarkersEvent>,
-    // materials: ResMut<Assets<CanvasMaterial>>,
+    mut change_canvas_material_event: EventReader<ChangeCanvasMaterialEvent>,
     mut plots: ResMut<Assets<Plot>>,
     query: Query<(Entity, &Handle<Plot>), With<MarkerUniform>>,
 ) {
-    for event in spawn_markers_event.iter() {
-        // TODO: sometimes the query works, but the deletion has already been done.
-        // fix this please.
+    for event in change_canvas_material_event.iter() {
+        //
         for (entity, plot_handle) in query.iter() {
             if event.plot_handle == *plot_handle {
                 commands.entity(entity).despawn();
             }
         }
-        // let canvas = materials.get(&event.canvas_handle).unwrap();
+
         let mut plot = plots.get_mut(&event.plot_handle).unwrap();
-
-        let num_pts = 50;
-
-        // let xs_linspace = linspace(canvas.bounds.lo.x, canvas.bounds.up.x, num_pts);
-        let xs_linspace = linspace(-1.0, 1.0, num_pts);
-        let xs = xs_linspace.into_iter().collect::<Vec<f32>>();
-
-        let ys = xs
-            .iter()
-            .map(|x| Vec2::new(*x, f(*x)))
-            .collect::<Vec<Vec2>>();
-
-        println!(" ys: {:?}", ys[0].x);
 
         plot_points(
             &mut commands,
             &mut meshes,
-            ys,
+            // ys,
             &mut plot,
             &event.plot_handle,
         )
     }
 }
 
-// example function to be plotted
-pub fn f(x: f32) -> f32 {
-    let freq = 4.0;
-    let y = (x * freq).sin() / 2.0;
-    return y;
-}
-
 pub fn plot_points(
     commands: &mut Commands,
     meshes: &mut ResMut<Assets<Mesh>>,
-    ys: Vec<Vec2>,
-    // plot: &mut Plot,
-    // canvas: &CanvasMaterial,
     plot: &mut Plot,
     plot_handle: &Handle<Plot>,
 ) {
-    let ys_world = plot.plot_to_world(&ys);
-    let quad_size = 30.0;
+    let data = plot.data.clone();
+    // let color = data.marker_plot.color;
+    for marker_plot in data.marker_plots.iter() {
+        let ys = marker_plot.data.clone();
+        let color = marker_plot.color;
+        let ys_world = plot.plot_to_world(&ys);
+        let quad_size = 30.0;
 
-    println!("plot_points: ys_world: {:?}", ys_world[0].x);
-
-    commands
-        .spawn_bundle((
-            // MarkerMesh2d::default(),
-            // Mesh2dHandle(meshes.add(mesh)),
-            Mesh2dHandle(meshes.add(Mesh::from(shape::Quad {
-                size: Vec2::splat(quad_size),
-                flip: false,
-            }))),
-            GlobalTransform::default(),
-            Transform::from_translation(Vec3::new(0.0, 0.0, 20.0)),
-            Visibility::default(),
-            ComputedVisibility::default(),
-            MarkerInstanceMatData(
-                ys_world
-                    .iter()
-                    .map(|v| MarkerInstanceData {
-                        //
-                        // TODO: take inner border into account
-                        //
-                        position: Vec3::new(v.x, v.y, 0.0) - plot.position.extend(20.0) * 1.0,
-                        scale: 1.0,
-                        color: Color::rgba(0.8, 0.6, 0.1, 1.0).as_rgba_f32(),
-                    })
-                    .collect(),
-            ),
-            // NoFrustumCulling,
-        ))
-        .insert(plot_handle.clone())
-        .insert(MarkerUniform {
-            point_size: 0.5,
-            hole_size: 1.0,
-            zoom: 1.0,
-            point_type: 4,
-            quad_size,
-            inner_canvas_size_in_pixels: plot.size / (1.0 + plot.outer_border),
-            // outer_border: plot.outer_border,
-            canvas_position: plot.position,
-        });
+        commands
+            .spawn_bundle((
+                Mesh2dHandle(meshes.add(Mesh::from(shape::Quad {
+                    size: Vec2::splat(quad_size),
+                    flip: false,
+                }))),
+                GlobalTransform::default(),
+                Transform::from_translation(Vec3::new(0.0, 0.0, 20.0)),
+                Visibility::default(),
+                ComputedVisibility::default(),
+                MarkerInstanceMatData(
+                    ys_world
+                        .iter()
+                        .map(|v| MarkerInstanceData {
+                            //
+                            // TODO: take inner border into account
+                            //
+                            position: Vec3::new(v.x, v.y, 0.0) + plot.position.extend(20.0),
+                            scale: 1.0,
+                            color: Color::rgba(0.8, 0.6, 0.1, 1.0).as_rgba_f32(),
+                        })
+                        .collect(),
+                ),
+                // NoFrustumCulling,
+            ))
+            .insert(plot_handle.clone())
+            .insert(MarkerUniform {
+                point_size: 0.5,
+                hole_size: 1.0,
+                zoom: 1.0,
+                point_type: 4,
+                quad_size,
+                inner_canvas_size_in_pixels: plot.size / (1.0 + plot.outer_border),
+                // outer_border: plot.outer_border,
+                canvas_position: plot.position,
+                color: col_to_vec4(color),
+            });
+    }
 }
 
-use crate::plot_canvas_plugin::ChangeCanvasMaterialEvent;
-
-pub fn change_uni(
+pub fn change_marker_uni(
     mut query: Query<&mut MarkerUniform>,
     mouse_position: Res<Cursor>,
     mouse_button_input: Res<Input<MouseButton>>,
@@ -183,7 +132,7 @@ pub fn change_uni(
     for mut custom_uni in query.iter_mut() {
         let mouse_pos = mouse_position.position;
 
-        if mouse_button_input.pressed(MouseButton::Left) {
+        if mouse_button_input.pressed(MouseButton::Right) {
             custom_uni.point_size = mouse_pos.x / 100.0;
             println!("{:?}", custom_uni.point_size);
             // println!("{}", custom_uni.ya.z);
@@ -226,6 +175,7 @@ pub struct MarkerUniform {
     pub quad_size: f32,
     pub inner_canvas_size_in_pixels: Vec2,
     pub canvas_position: Vec2,
+    pub color: Vec4,
 }
 
 #[derive(Clone, Copy, Pod, Zeroable)]

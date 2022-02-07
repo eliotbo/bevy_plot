@@ -15,7 +15,28 @@ use bevy::{
 };
 
 // use crate::plot_format::*;
+use crate::plot::*;
 use crate::util::*;
+
+pub struct ChangeCanvasMaterialEvent {
+    pub plot_handle: Handle<Plot>,
+    pub canvas_material_handle: Handle<CanvasMaterial>,
+}
+
+pub fn update_canvas_material(
+    // mut commands: Commands,
+    mut materials: ResMut<Assets<CanvasMaterial>>,
+    plots: ResMut<Assets<Plot>>,
+    mut change_mat_event: EventReader<ChangeCanvasMaterialEvent>,
+) {
+    for event in change_mat_event.iter() {
+        if let Some(material) = materials.get_mut(event.canvas_material_handle.clone()) {
+            if let Some(plot) = plots.get(event.plot_handle.clone()) {
+                material.update_all(&plot);
+            }
+        }
+    }
+}
 
 #[derive(Component)]
 pub struct PlotLabel;
@@ -24,6 +45,13 @@ pub struct PlotLabel;
 pub struct GraphSize {
     pub size: Vec2,
     pub outer_border: Vec2,
+}
+
+pub struct SpawnGraphEvent {
+    pub pos: Vec2,
+    // pub shader_param_handle: Handle<CanvasMaterial>,
+    pub plot_handle: Handle<Plot>,
+    pub graph_sprite: GraphSprite,
 }
 
 pub enum Corner {
@@ -78,8 +106,8 @@ impl GraphSprite {
         let top_left = self.position + Vec2::new(-size.x / 2.0, size.y / 2.0);
         let bottom_right = self.position + Vec2::new(size.x / 2.0, -size.y / 2.0);
 
-        println!("{:?}", position);
-        println!("top_left: {:?}", top_left);
+        // println!("{:?}", position);
+        // println!("top_left: {:?}", top_left);
 
         if (top_right - position).length() < self.hover_radius {
             commands.entity(entity).insert(ResizePlotWindow {
@@ -165,13 +193,6 @@ pub struct ZoomAxes {
     pub mouse_pos: Vec2,
 }
 
-pub struct SpawnGraphEvent {
-    pub pos: Vec2,
-    // pub shader_param_handle: Handle<CanvasMaterial>,
-    pub plot_handle: Handle<Plot>,
-    pub graph_sprite: GraphSprite,
-}
-
 pub struct UpdatePlotLabelsEvent {
     pub plot_handle: Handle<Plot>,
     pub plot_entity: Entity,
@@ -208,7 +229,7 @@ impl Default for LineParams {
 #[allow(non_snake_case)]
 pub struct CanvasMaterial {
     // mouse_pos in the reference frame of the graph, corresponding to its axes coordinates
-    pub relative_mouse_pos: Vec2,
+    pub mouse_pos: Vec2,
     pub tick_period: Vec2,
     pub bounds: PlotCanvasBounds,
 
@@ -226,7 +247,7 @@ impl CanvasMaterial {
 
     pub fn update_all(&mut self, plot: &Plot) {
         self.position = plot.position;
-        self.relative_mouse_pos = plot.relative_mouse_pos;
+        // self.mouse_pos = plot.relative_mouse_pos;
         self.tick_period = plot.tick_period;
         self.bounds = plot.bounds.clone();
         self.globals = plot.globals;
@@ -236,7 +257,7 @@ impl CanvasMaterial {
 
     pub fn new(plot: &Plot) -> Self {
         CanvasMaterial {
-            relative_mouse_pos: plot.relative_mouse_pos,
+            mouse_pos: plot.relative_mouse_pos,
             tick_period: plot.tick_period,
             bounds: plot.bounds.clone(),
             globals: plot.globals,

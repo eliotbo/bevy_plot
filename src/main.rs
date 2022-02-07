@@ -8,9 +8,16 @@ pub use markers::*;
 
 mod inputs;
 mod util;
-use util::*;
+// use util::*;
 
+mod bezier;
+// use bezier::*;
+
+mod plot;
+use plot::*;
 // use inputs::*;
+
+use itertools_num::linspace;
 
 fn main() {
     App::new()
@@ -22,8 +29,7 @@ fn main() {
             ..Default::default()
         })
         .add_plugins(DefaultPlugins)
-        .add_plugin(PlotCanvasPlugin)
-        .add_plugin(MarkersPlugin)
+        .add_plugin(PlotPlugin)
         .add_startup_system(setup)
         .add_system(exit)
         .run();
@@ -43,6 +49,13 @@ fn exit(keyboard_input: Res<Input<KeyCode>>) {
 5) impl PlotFormat for Vec<(f32, f32)>...
 
 */
+
+// example function to be plotted
+pub fn f(x: f32) -> f32 {
+    let freq = 4.0;
+    let y = (x * freq).sin() / 2.0;
+    return y;
+}
 
 // set up a simple 3D scene
 fn setup(
@@ -64,35 +77,33 @@ fn setup(
         },
         ..OrthographicCameraBundle::new_2d()
     });
-    // .insert(Cam::default());
 
-    let size = Vec2::new(777.0, 500.0) * 1.0;
+    let mut plot = Plot::default();
 
-    let mut plot = Plot {
-        relative_mouse_pos: Vec2::new(0.4, 0.5),
-
-        tick_period: Vec2::new(0.27, 0.22),
-
-        bounds: PlotCanvasBounds {
-            up: Vec2::new(2.1, 3.4) * 1.0,
-            lo: Vec2::new(-1.03, -0.85) * 1.0,
-        },
-
-        globals: PlotGlobals {
-            time: 0.0,
-            zoom: 1.0,
-            dum1: 0.0, // for future use
-            dum2: 0.0, // for future use
-        },
-
-        size: size.clone(),
-        outer_border: Vec2::new(0.03 * size.y / size.x, 0.03),
-        zero_world: Vec2::new(0.0, 0.0),
-
-        // position: Vec2::new(65.0, 28.0) * 1.,
-        position: Vec2::ZERO,
-    };
     plot.compute_zeros();
+    plot.position = Vec2::new(-100.0, -55.0);
+    plot.bezier_num_points = 75;
+
+    let xs_linspace = linspace(-1.0, 1.0, 50);
+    let xs = xs_linspace.into_iter().collect::<Vec<f32>>();
+
+    // // insert the marker data inside the Plot struct
+    // let ys = vec![
+    //     Vec2::new(2.0, 3.04),
+    //     Vec2::new(1.0, 3.42),
+    //     Vec2::new(0.5, 3.79),
+    //     Vec2::new(0.25, 4.58),
+    // ];
+
+    let ys = xs
+        .iter()
+        .map(|x| Vec2::new(*x, f(*x)))
+        .collect::<Vec<Vec2>>();
+
+    plot.plot(ys);
+
+    plot.plot_analytical(easing_func);
+    plot.plot_analytical(|x: f32| x * x);
 
     let plot_handle = plots.add(plot.clone());
 
@@ -110,18 +121,45 @@ fn setup(
 
     graph_sprite.analytical_functions[2] = Some(|x| custom_sin(x));
 
-    // plot.plot_analytical(|x| custom_sin(x), 1);
-
-    // graph_sprite.make_data(&mut plot);
-
     spawn_graph_event.send(SpawnGraphEvent {
         pos: Vec2::ZERO,
         // shader_param_handle: material_handle,
         graph_sprite,
         plot_handle: plot_handle.clone(),
     });
+
+    // insert the analytical functions inside the Plot struct
+    // plot.plot(())
+
+    // plot.plot_analytical(|x| custom_sin(x), 1);
+
+    // graph_sprite.make_data(&mut plot);
 }
 
 pub fn custom_sin(x: f32) -> f32 {
     (2.0 * 2.0 * 3.1416 * (x)).sin() * 0.5 + 0.2
+}
+
+pub fn custom_sin2(x: f32) -> f32 {
+    (2.0 * 2.0 * 3.1416 * (x)).sin() * 0.5 + 0.4
+}
+
+pub fn easing_func(x: f32) -> f32 {
+    let start_point: Vec2 = Vec2::ZERO;
+    let end_point: Vec2 = Vec2::splat(1.0);
+    let y_min = start_point.y;
+    let y_max = end_point.y;
+    let mut expo: f32 = 5.0;
+
+    let mut xp = (x - start_point.x) / (end_point.x - start_point.x);
+    let mut f = y_max - (1.0 - xp).powf(expo) * (y_max - y_min);
+
+    // switch start point and end point if the exponent is under 1
+    if expo < 1.0 {
+        expo = 1.0 / expo;
+        xp = (x - end_point.x) / (start_point.x - end_point.x);
+        f = y_min + (1.0 - xp).powf(expo) * (y_max - y_min);
+    }
+
+    return f;
 }

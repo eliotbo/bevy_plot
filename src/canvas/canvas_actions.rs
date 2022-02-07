@@ -7,10 +7,15 @@ use bevy::{
 
 use crate::canvas::*;
 use crate::inputs::*;
-use crate::markers::SpawnMarkersEvent;
+// use crate::markers::SpawnMarkersEvent;
 
-use crate::plot_canvas_plugin::ChangeCanvasMaterialEvent;
+// use crate::plot_canvas_plugin::ChangeCanvasMaterialEvent;
+
+use crate::canvas::ChangeCanvasMaterialEvent;
 use crate::util::*;
+
+use crate::bezier::*;
+use crate::plot::*;
 
 fn spawn_axis_tick_labels(
     commands: &mut Commands,
@@ -188,7 +193,9 @@ pub fn spawn_graph(
     mut meshes: ResMut<Assets<Mesh>>,
     // asset_server: Res<AssetServer>,
     mut update_labels_event: EventWriter<UpdatePlotLabelsEvent>,
-    mut spawn_markers_event: EventWriter<SpawnMarkersEvent>,
+    // mut spawn_markers_event: EventWriter<SpawnMarkersEvent>,
+    mut spawn_beziercurve_event: EventWriter<SpawnBezierCurveEvent>,
+    mut change_canvas_material_event: EventWriter<ChangeCanvasMaterialEvent>,
 ) {
     for event in spawn_graph_event.iter() {
         let plot_handle = event.plot_handle.clone();
@@ -219,20 +226,64 @@ pub fn spawn_graph(
         });
 
         // TODO after tests: remove this
-        spawn_markers_event.send(SpawnMarkersEvent {
+        change_canvas_material_event.send(ChangeCanvasMaterialEvent {
+            canvas_material_handle: canvas_material_handle.clone(),
+            plot_handle: plot_handle.clone(),
+        });
+
+        // TODO after tests: remove this
+        spawn_beziercurve_event.send(SpawnBezierCurveEvent {
             canvas_handle: canvas_material_handle,
             plot_handle,
         });
     }
 }
 
-pub fn change_plot(
-    mut commands: Commands,
-    // mut my_canvas_mat: ResMut<Assets<CanvasMaterial>>,
+pub fn update_mouse_target(
+    // mut commands: Commands,
+    mut my_canvas_mats: ResMut<Assets<CanvasMaterial>>,
     mut my_plots: ResMut<Assets<Plot>>,
     //
     // graph_sprite_query: Query<(Entity, &GraphSprite, &Handle<CanvasMaterial>)>,
-    graph_sprite_query: Query<(Entity, &GraphSprite, &Handle<Plot>, &Handle<CanvasMaterial>)>,
+    graph_sprite_query: Query<(&mut Handle<CanvasMaterial>, &Handle<Plot>)>,
+
+    cursor: Res<Cursor>,
+    mouse_button_input: Res<Input<MouseButton>>,
+) {
+    if mouse_button_input.just_pressed(MouseButton::Left) {
+        for (canvas_material_handle, plot_handle) in graph_sprite_query.iter() {
+            // println!("{:?}", "CHANGING SHADER");
+            // if let Some(plot) = my_canvas_mat.get_mut(plot_handle) {
+            if let Some(plot) = my_plots.get_mut(plot_handle) {
+                plot.compute_zeros();
+                if let Some(canvas_material) = my_canvas_mats.get_mut(canvas_material_handle) {
+                    // plot.compute_zeros();
+
+                    // let mouse_world = cursor.position - 0.0 * plot.position - 0.0 * plot.zero_world;
+
+                    // let ranges = plot.bounds.up - plot.bounds.lo;
+
+                    // let mouse_plot = mouse_world * (1.0 + plot.outer_border.y) * ranges / plot.size;
+
+                    canvas_material.mouse_pos = cursor.position;
+                }
+            }
+        }
+    }
+}
+
+pub fn change_plot(
+    mut commands: Commands,
+    // mut my_canvas_mats: ResMut<Assets<CanvasMaterial>>,
+    mut my_plots: ResMut<Assets<Plot>>,
+    //
+    // graph_sprite_query: Query<(Entity, &GraphSprite, &Handle<CanvasMaterial>)>,
+    graph_sprite_query: Query<(
+        Entity,
+        &GraphSprite,
+        // &mut Handle<CanvasMaterial>,
+        &Handle<Plot>,
+    )>,
     // markers_query: Query<Entity, With<MarkerUniform>>,
     //
     keyboard_input: Res<Input<KeyCode>>,
@@ -246,7 +297,7 @@ pub fn change_plot(
     mut windows: ResMut<Windows>,
     // mut change_canvas_material_event: EventWriter<ChangeCanvasMaterialEvent>,
 ) {
-    for (plot_entity, graph_sprite, plot_handle, material_handle) in graph_sprite_query.iter() {
+    for (plot_entity, graph_sprite, plot_handle) in graph_sprite_query.iter() {
         // println!("{:?}", "CHANGING SHADER");
         // if let Some(plot) = my_canvas_mat.get_mut(plot_handle) {
         if let Some(plot) = my_plots.get_mut(plot_handle) {
@@ -269,7 +320,10 @@ pub fn change_plot(
                 y_range / 2.0 + plot.bounds.lo.y,
             );
 
-            plot.relative_mouse_pos = plot.relative_mouse_pos + current_zero_pos; //Vec2::new(-x_range / 2.0, -y_range / 2.0);
+            // if let Some(canvas_material) = my_canvas_mats.get_mut(canvas_material_handle) {
+            //     canvas_material.relative_mouse_pos = plot.relative_mouse_pos - plot.zero_world;
+            //     //Vec2::new(-x_range / 2.0, -y_range / 2.0);
+            // }
 
             graph_sprite.hovered_on_plot_edges(cursor.position, &mut windows);
             // let max_num_ticks = 15.0;
@@ -355,7 +409,7 @@ pub fn adjust_graph_size(
             Entity,
             &mut GraphSprite,
             &Handle<Plot>,
-            &Handle<CanvasMaterial>,
+            // &Handle<CanvasMaterial>,
             &ResizePlotWindow,
             &mut Transform,
         ),
@@ -370,14 +424,8 @@ pub fn adjust_graph_size(
     // mut change_canvas_material_event: EventWriter<ChangeCanvasMaterialEvent>,
     //
 ) {
-    for (
-        plot_entity,
-        mut graph_sprite,
-        plot_handle,
-        material_handle,
-        resize_corner,
-        mut transform,
-    ) in graph_sprite_query.iter_mut()
+    for (plot_entity, mut graph_sprite, plot_handle, resize_corner, mut transform) in
+        graph_sprite_query.iter_mut()
     {
         //
 
@@ -464,19 +512,21 @@ pub fn adjust_graph_axes(
     mut mouse_motion_events: EventReader<MouseMotion>,
     mut update_plot_labels_event: EventWriter<UpdatePlotLabelsEvent>,
     mut change_canvas_material_event: EventWriter<ChangeCanvasMaterialEvent>,
-    // mut windows: ResMut<Windows>,
 ) {
-    // move axes using grab and drag
+    let delta_pixels_vec = mouse_motion_events
+        .iter()
+        .map(|e| e.delta)
+        .collect::<Vec<Vec2>>();
+    let delta_pixels = delta_pixels_vec.iter().fold(Vec2::ZERO, |acc, x| acc + *x);
 
-    for (plot_entity, _graph_sprite, plot_handle, material_handle) in query.q0().iter_mut() {
-        for mouse_move_event in mouse_motion_events.iter() {
-            //
-            println!("MOUSE",);
+    if delta_pixels != Vec2::ZERO {
+        for (plot_entity, _graph_sprite, plot_handle, material_handle) in query.q0().iter_mut() {
+            println!("motion: {:?}", delta_pixels);
 
             if let Some(plot) = plots.get_mut(plot_handle) {
-                //
+                // sum up the mouse movements
 
-                plot.move_axes(mouse_move_event.delta);
+                plot.move_axes(delta_pixels);
 
                 update_plot_labels_event.send(UpdatePlotLabelsEvent {
                     plot_handle: plot_handle.clone(),
@@ -487,10 +537,9 @@ pub fn adjust_graph_axes(
                     plot_handle: plot_handle.clone(),
                     canvas_material_handle: material_handle.clone(),
                 });
-            }
 
-            // do not allow more than one mouse event per frame
-            break;
+                // }
+            }
         }
     }
 

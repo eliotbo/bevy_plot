@@ -182,6 +182,7 @@ struct MarkerUniform {
     quad_size: f32;
     inner_canvas_size_in_pixels: float2;
     canvas_position_in_pixels: float2;
+    color: float4;
 };
 
 [[group(2), binding(0)]]
@@ -198,7 +199,7 @@ fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
     var solid = width * zoom * 1.0 ;
 
     // var out_col = float4(0.5, 0.5, 0.0, 1.0);
-    var out_col = in.color;
+    var out_col = uni.color;
 
     var uv = in.uv - float2(0.5,0.5);
 
