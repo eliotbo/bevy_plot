@@ -51,17 +51,11 @@ pub fn change_segment_uni(
         let mouse_pos = mouse_position.position;
 
         if mouse_button_input.pressed(MouseButton::Left) {
-            segment_uni.hole_size = mouse_pos.x / 100.0;
+
             // println!("left: {}, right: {}", segment_uni.left, segment_uni.mech);
         } else if mouse_button_input.pressed(MouseButton::Right) {
-            segment_uni.segment_size = (mouse_pos.x / 100.0).clamp(0.2, 3.0);
-
-            if segment_uni.segment_size < 2.0 {
-                segment_uni.mech = 0.0;
-            } else {
-                segment_uni.mech = 1.0;
-            }
-
+            segment_uni.hole_size = mouse_pos.x / 100.0;
+            segment_uni.segment_size = mouse_pos.x / 100.0;
             // segment_uni.ya.x = mouse_pos.x / 100.0;
             // segment_uni.ya.y = mouse_pos.y / 100.0;
             println!(
@@ -164,25 +158,47 @@ pub fn plot_segments(
         let mut ends = Vec::new();
         let mut mesh_attr_controls: Vec<[f32; 4]> = Vec::new();
 
-        let line_width = 5.0;
+        let line_width = 10.0;
         for k in 0..num_pts - 1 {
+            // if k == 20 || k == 22 || k == 24 || k == 26 || k == 28 || k == 30 {
+            //     continue;
+            // }
+            // let quadt_offset = line_width * 1.0;
+
+            // let p0 = Vec2::new(ys_world[k].x - quadt_offset, ys_world[k].y + quadt_offset);
+            // let p1 = Vec2::new(ys_world[k].x - quadt_offset, ys_world[k].y - quadt_offset);
+            // let p2 = Vec2::new(
+            //     ys_world[k + 1].x + quadt_offset,
+            //     ys_world[k].y + quadt_offset,
+            // );
+            // let p3 = Vec2::new(
+            //     ys_world[k + 1].x + quadt_offset,
+            //     ys_world[k].y - quadt_offset,
+            // );
+
             let y0 = ys_world[k];
             let y1 = ys_world[k + 1];
 
-            let dy = (y1 - y0).normalize();
-            let n = Vec2::new(-dy.y, dy.x);
+            // let q0 = ys_world[k] - dfs[k] * 10.0;
+            // let q1 = ys_world[k + 1] + dfs[k + 1] * 10.0;
 
-            let mut p0 = y0 + n * line_width;
-            let mut p1 = y0 - n * line_width;
-            let mut p2 = y1 + n * line_width;
-            let mut p3 = y1 - n * line_width;
+            // let theta = (y1.x - y0.x).atan2(y1.y - y0.y);
 
-            if segment_plot.mech {
-                p0 = y0 + n * line_width - dy * line_width * 1.0;
-                p1 = y0 - n * line_width - dy * line_width * 1.0;
-                p2 = y1 + n * line_width + dy * line_width * 1.0;
-                p3 = y1 - n * line_width + dy * line_width * 1.0;
-            }
+            // let dy = (y1 - y0).normalize();
+            // let n = Vec2::new(-dy.y, dy.x);
+            let n0 = -ns[k];
+            let n1 = -ns[k + 1];
+
+            let p0 = y0 + n0 * line_width;
+            let p1 = y0 - n0 * line_width;
+            let p2 = y1 + n1 * line_width;
+            let p3 = y1 - n1 * line_width;
+
+            // let r = 50.0;
+            // let p0 = Vec2::new(-r, -r);
+            // let p1 = Vec2::new(-r, r);
+            // let p2 = Vec2::new(r, r);
+            // let p3 = Vec2::new(r, -r);
 
             mesh0.push(p0);
             mesh0.push(p1);
@@ -248,7 +264,6 @@ pub fn plot_segments(
             ))
             .insert(plot_handle.clone())
             .insert(SegmentUniform {
-                mech: if segment_plot.mech { 1.0 } else { 0.0 },
                 segment_size: segment_plot.size,
                 hole_size: 1.0,
                 zoom: 1.0,
@@ -269,7 +284,6 @@ pub struct SegmentMesh2d;
 
 #[derive(Component, Clone, AsStd140)]
 pub struct SegmentUniform {
-    pub mech: f32,
     pub segment_size: f32,
     pub hole_size: f32,
     pub zoom: f32,

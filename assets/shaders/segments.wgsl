@@ -15,36 +15,32 @@ type float2 = vec2<f32>;
 // The structure of the vertex buffer is as specified in `specialize()`
 struct Vertex {
     [[location(0)]] position: vec3<f32>;
-    [[location(1)]] normal: vec3<f32>;
+    [[location(1)]] ends: vec4<f32>;
     [[location(2)]] uv: vec2<f32>;
-    // [[location(3)]] tangent: vec2<f32>;
-
-    // instanced
-    [[location(3)]] i_pos_scale: vec4<f32>;
-    [[location(4)]] i_color: vec4<f32>;
+    [[location(3)]] control: vec4<f32>;
 };
 
 struct VertexOutput {
     // The vertex shader must set the on-screen position of the vertex
     [[builtin(position)]] clip_position: vec4<f32>;
-
-    [[location(0)]] uv: vec2<f32>;
-    [[location(1)]] pos_scale: vec4<f32>;
-    [[location(2)]] color: vec4<f32>;
+    // We pass the vertex color to the framgent shader in location 0
+    [[location(0)]] ends: vec4<f32>;
+    [[location(1)]] uv: vec2<f32>;
+    [[location(2)]] control: vec4<f32>;
 };
 
 [[stage(vertex)]]
 fn vertex(vertex: Vertex) -> VertexOutput {
 
-    let position = vertex.position * vertex.i_pos_scale.w + vertex.i_pos_scale.xyz  ;
-    let world_position = mesh.model * vec4<f32>(position, 1.0);
-
     var out: VertexOutput;
 
-    out.clip_position = view.view_proj * world_position;
-    out.color = vertex.i_color;
+    out.clip_position = view.view_proj * mesh.model * vec4<f32>(vertex.position, 1.0);
+
+    out.ends = vertex.ends;
     out.uv = vertex.uv;
-    out.pos_scale = vertex.i_pos_scale;
+    out.control = vertex.control;
+
+
 
     return out;
 }
@@ -70,9 +66,12 @@ fn toLinear(sRGB: float4) -> float4
 
 
 struct FragmentInput {
-    [[location(0)]] uv: vec2<f32>;
-    [[location(1)]] pos_scale: vec4<f32>;
-    [[location(2)]] color: vec4<f32>;
+    // [[location(0)]] uv: vec2<f32>;
+    // [[location(1)]] pos_scale: vec4<f32>;
+    // [[location(2)]] color: vec4<f32>;
+    [[location(0)]] ends: vec4<f32>;
+    [[location(1)]] uv: vec2<f32>;
+    [[location(2)]] control: vec4<f32>;
 };
 
 fn cla(mi: f32, ma: f32, x: f32) -> f32 {
@@ -92,6 +91,16 @@ fn sdSegment(p: vec2<f32>, a: vec2<f32>, b: vec2<f32>) -> f32 {
   return length(pa - ba * h);
 }
 
+
+fn sdLine(uv: vec2<f32>, p0: vec2<f32>, p1: vec2<f32>) -> f32 {
+  let m =  (p1.y - p0.y) / (p1.x - p0.x);
+  let b = p0.y - m * p0.x;
+  let biga = m;
+  let bigc = b;
+
+  let d = abs(-m * uv.x + uv.y - b) / sqrt(m * m + 1.0);
+  return d;
+}
 
 fn sdCircle(p: vec2<f32>, c: vec2<f32>, r: f32) -> f32 {
   let d = length(p - c);
@@ -116,6 +125,7 @@ fn sdRoundedBox(p: vec2<f32>, b: vec2<f32>, r: vec4<f32>) -> f32 {
 
 
 struct SegmentUniform {
+    mech: f32;
     segmemt_size: f32;
     hole_size: f32;
     zoom: f32;
@@ -135,21 +145,28 @@ var<uniform> uni: SegmentUniform;
 
 [[stage(fragment)]]
 fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
- 
-    let width = 0.041 ;
-    let zoom = uni.zoom;
+  
+    let width = 1.0 ;
+    // let segmemt_size = uni.segmemt_size * width;
 
-    var w = width * zoom  ;
-    var solid = width * zoom  ;
+    let zoom = uni.zoom;
+    var w = width * zoom * sqrt(uni.segmemt_size * 4.5) ;
+  
+    var solid = width * zoom * uni.segmemt_size ;
 
 
     var out_col = uni.color;
 
-    var uv = in.uv - float2(0.5,0.5);
 
-    var uv_in_pixels = float2(-uv.x, uv.y) * uni.quad_size - in.pos_scale.xy;
 
-    let segmemt_size = uni.segmemt_size;
+    let y0 = in.ends.xy;
+    let y1 = in.ends.zw;
+
+    let dy = normalize(y1 - y0);
+    let q0 = y0 - dy  * 10.0;
+    let q1 = y1 + dy  * 10.0;
+
+
 
     // let point_type = i32(uni.point_type);
     // let point_type = 6;
@@ -165,9 +182,42 @@ fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
       circ_zoom =  sqrt(sqrt(zoom));
     }
 
+    // let d = sdSegment(in.uv, q0, q1) ;
+    let d = sdSegment(in.uv, y0, y1) ;
+
+    
+    let s = smoothStep(solid, solid + w, d);
+    out_col = out_col * (1.0 - s);
 
 
-    let black = float4(0.0, 0.0, 0.0, 1.0);
+  // let black = float4(0.0, 0.0, 0.0, 1.0);
+
+
+
+    // let t0 = y0 - dy  *  uni.segmemt_size;
+    // let t1 = y1 + dy  *  uni.segmemt_size;
+
+    // let d = sdSegment(in.uv, t0, t1) ;
+
+    // let s = smoothStep(solid *0.95, solid *0.98, d);
+    // out_col = mix(out_col, uni.color, (1.0 - s));
+
+
+    
+
+      // mechanical look
+    if (uni.mech > 0.5) {
+        let c0 = sdCircle(in.uv, y0, w);
+        let sc0 = smoothStep(0.0 + solid, w + solid , c0);
+
+        let solid_c = solid / 3.0;
+        let w_c = w / 2.0;
+
+        let c1 = sdCircle(in.uv, y1, 0.2 );
+        let sc1 = smoothStep(0.0 + solid_c , (w_c + solid_c)  , abs(c1));
+        
+        out_col.a = out_col.a * (1.0 -s )   * ( sc1) * sc0;
+    }
 
 
 
@@ -175,14 +225,16 @@ fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
     let r = 0.02 * uni.inner_canvas_size_in_pixels.x;
     let d = sdRoundedBox(
         // in.uv - bez_uni.canvas_position_in_pixels , 
-        in.uv + uni.canvas_position_in_pixels,
+        in.uv + uni.canvas_position_in_pixels * 0.0,
         uni.inner_canvas_size_in_pixels / 2.0 - 1.0, float4(r,r,r,r)
     );
 
     let s = smoothStep(-2.0, 0.0, d );
-    out_col = mix(out_col, float4(0.0,0.3,0.3,0.0) ,  s) ;
+    out_col = mix(out_col, float4(out_col.x,out_col.y,out_col.z,0.0) ,  s) ;
 
 
     return out_col;
+
+    // return float4(1.0,0.0,0.0,1.0);
 
 }

@@ -26,7 +26,7 @@ use bevy::{
     },
 };
 
-use crate::canvas::*;
+// use crate::canvas::*;
 use crate::inputs::*;
 
 use crate::plot::*;
@@ -402,7 +402,7 @@ pub fn plot_fn(
                 ComputedVisibility::default(),
             ))
             .insert(BezierCurveUniform {
-                mech: 0.0,
+                mech: if bezier_plot.mech { 1.0 } else { 0.0 },
                 left: 1.0,
                 zoom: 1.0,
                 inner_canvas_size_in_pixels: plot.size / (1.0 + plot.outer_border),

@@ -26,6 +26,7 @@ impl Plugin for PlotPlugin {
             .add_event::<ReleaseAllEvent>()
             .add_event::<UpdatePlotLabelsEvent>()
             .add_event::<ChangeCanvasMaterialEvent>()
+            .add_event::<WaitForUpdatePlotLabelsEvent>()
             // .add_event::<SpawnBezierCurveEvent>()
             .add_asset::<Plot>()
             .insert_resource(make_color_palette())
@@ -35,28 +36,39 @@ impl Plugin for PlotPlugin {
                 SystemSet::new().label("model").before("updates")             
                 .with_system(adjust_graph_axes)
                 .with_system(change_plot)
-                .with_system(update_plot_labels)
+                
             )
 
             .add_system_set(
-                SystemSet::new().label("updates").before("axes")
+                SystemSet::new().label("updates")
                 .with_system(update_canvas_material)
                 .with_system(spawn_bezier_function)
+                .with_system(wait_for_graph_spawn)
+                
             )
        
-            .add_system(release_all)
-            .add_system(spawn_graph)
-            .add_system(adjust_graph_size)
-            .add_system(record_mouse_events_system)
-            .add_system(change_bezier_uni)
-            .add_system(change_marker_uni)
-            .add_system(change_segment_uni)
-            .add_system(update_mouse_target)
+            .add_system_set(
+                SystemSet::new().label("other").after("updates")
+                .with_system(release_all)
+                .with_system(spawn_graph)
+                .with_system(adjust_graph_size)
+                .with_system(record_mouse_events_system)
+                .with_system(change_bezier_uni)
+                .with_system(change_marker_uni)
+                .with_system(change_segment_uni)
+                .with_system(update_mouse_target)
+                .with_system(update_plot_labels)
+            )
             .add_system(markers_setup.exclusive_system().at_end())
             .add_system(segments_setup.exclusive_system().at_end())
             // ...
             ;
     }
+}
+
+pub struct WaitForUpdatePlotLabelsEvent {
+    pub plot_handle: Handle<Plot>,
+    pub quad_entity: Entity,
 }
 
 #[derive(Debug, Clone, AsStd140)]
@@ -91,6 +103,7 @@ pub struct BezierData {
     pub line_style: LineStyle,
     pub draw_contour: bool,
     pub color: Color,
+    pub mech: bool,
 }
 
 impl Default for BezierData {
@@ -102,6 +115,7 @@ impl Default for BezierData {
             size: 1.0,
             line_style: LineStyle::Solid,
             draw_contour: false,
+            mech: false,
         }
     }
 }
@@ -144,6 +158,7 @@ pub struct SegmentData {
     pub size: f32,
     pub line_style: LineStyle,
     pub draw_contour: bool,
+    pub mech: bool,
 }
 
 impl Default for SegmentData {
@@ -155,6 +170,7 @@ impl Default for SegmentData {
             size: 1.0,
             line_style: LineStyle::Solid,
             draw_contour: false,
+            mech: false,
         }
     }
 }
@@ -179,6 +195,7 @@ impl Default for PlotData {
 
 #[derive(Debug, Clone)]
 pub enum MarkerStyle {
+    None,
     Circle,
     Square,
     Triangle,
@@ -193,6 +210,7 @@ pub enum MarkerStyle {
 impl MarkerStyle {
     pub fn to_int32(&self) -> i32 {
         match self {
+            MarkerStyle::None => -1,
             MarkerStyle::Square => 0,
             MarkerStyle::Heart => 1,
             MarkerStyle::Triangle => 3,
@@ -202,14 +220,18 @@ impl MarkerStyle {
             MarkerStyle::Moon => 5,
             MarkerStyle::Cross => 6,
             MarkerStyle::X => 7,
-            
-             _ => 8, // Circle
+            MarkerStyle::Circle => 8, 
         }
     }
 }
+
+
 #[derive(Debug, Clone)]
 pub enum LineStyle{
+    None,
     Solid,
+
+    /// the following are not implemented yet
     Dashed,
     Dotted,
     DashDot,
@@ -219,6 +241,7 @@ pub enum LineStyle{
 impl LineStyle {
     pub fn to_int32(&self) -> i32 {
         match self {
+            LineStyle::None => -1,
             LineStyle::Solid => 0,
             LineStyle::Dashed => 1,
             LineStyle::Dotted => 2,
@@ -237,6 +260,9 @@ pub enum Opt {
 
     // Bezier curve and segments only
     LineStyle(LineStyle),
+    Mech(bool),
+
+    
 
     // markers only
     MarkerStyle(MarkerStyle),
@@ -356,6 +382,7 @@ impl Plot {
                         Opt::MarkerStyle(style)=> { data.marker_style = style.clone(); },
                         Opt::MarkerInnerPointColor(col)=> { data.marker_point_color = col.clone();},
                         Opt::LineStyle(_)=> {  eprintln!("LineStyle is not a valid option for markers"); },
+                        Opt::Mech(_)=> { eprintln!("Mech is not a valid option for markers");  },
                         Opt::Contour(cont)=> { data.draw_contour = *cont; },
                     }
                 }
@@ -379,6 +406,8 @@ impl Plot {
                         Opt::LineStyle(style)=> { data.line_style = style.clone(); },
 
                         Opt::Contour(cont)=> { data.draw_contour = *cont;  },
+
+                        Opt::Mech(mech)=> { data.mech = *mech; },
 
                         Opt::MarkerStyle(_)=> { 
                             eprintln!("MarkerStyle is not a valid option for segments"); 
@@ -468,6 +497,8 @@ impl Plot {
                 Opt::LineStyle(style)=> { data.line_style = style.clone(); },
 
                 Opt::Contour(cont)=> { data.draw_contour = *cont;  },
+
+                Opt::Mech(mech)=> { data.mech = *mech; },
 
                 Opt::MarkerStyle(_)=> { 
                     eprintln!("MarkerStyle is not a valid option for segments"); 

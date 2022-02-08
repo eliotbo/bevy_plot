@@ -61,6 +61,13 @@ pub fn f(x: f32) -> f32 {
     return y;
 }
 
+// example function to be plotted
+pub fn f2(x: f32) -> f32 {
+    let freq = 40.0;
+    let y = (x * freq).sin() / 2.0;
+    return y;
+}
+
 // set up a simple 3D scene
 fn setup(
     mut commands: Commands,
@@ -106,13 +113,32 @@ fn setup(
         .map(|x| Vec2::new(*x, f(*x)))
         .collect::<Vec<Vec2>>();
 
-    let marker_style = Opt::MarkerStyle(MarkerStyle::Cross);
-    let marker_size = Opt::Size(0.75);
-    // let marker_color = Opt::Color(Color::rgb(0.2, 0.8, 0.6));
-    let marker_color = Opt::Color(colors.get(&PlotColor::Yellow).unwrap()[5]);
-    let marker_contour = Opt::Contour(true);
-    let marker_options = vec![marker_style, marker_size, marker_color, marker_contour];
-    plot.plotopt(ys, marker_options);
+    // let marker_style = Opt::MarkerStyle(MarkerStyle::Cross);
+
+    plot.plotopt(
+        ys,
+        vec![
+            Opt::Size(0.75),
+            Opt::Color(colors.get(&PlotColor::Gray).unwrap()[2]),
+            Opt::Contour(true),
+            Opt::Mech(true),
+        ],
+    );
+
+    let ys = xs
+        .iter()
+        .map(|x| Vec2::new(*x, f2(*x) + 1.3))
+        .collect::<Vec<Vec2>>();
+
+    plot.plotopt(
+        ys,
+        vec![
+            Opt::Size(0.75),
+            Opt::Color(colors.get(&PlotColor::Green).unwrap()[1]),
+            Opt::Contour(true),
+            Opt::Mech(true),
+        ],
+    );
 
     plot.plot_analytical(easing_func);
 

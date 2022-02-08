@@ -195,7 +195,7 @@ pub struct ZoomAxes {
 
 pub struct UpdatePlotLabelsEvent {
     pub plot_handle: Handle<Plot>,
-    pub plot_entity: Entity,
+    pub canvas_entity: Entity,
 }
 
 // #[derive(Debug, Copy, Clone, AsStd140)]

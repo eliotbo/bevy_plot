@@ -14,7 +14,7 @@ use crate::inputs::*;
 use crate::canvas::ChangeCanvasMaterialEvent;
 use crate::util::*;
 
-use crate::bezier::*;
+// use crate::bezier::*;
 use crate::plot::*;
 
 fn spawn_axis_tick_labels(
@@ -69,12 +69,12 @@ pub fn update_plot_labels(
         for entity in plot_label_query.iter() {
             commands.entity(entity).despawn();
         }
-        let graph_sprite = plot_sprite_query.get_mut(event.plot_entity).unwrap();
+        let graph_sprite = plot_sprite_query.get_mut(event.canvas_entity).unwrap();
 
         let size = graph_sprite.original_size;
 
         let plot_handle = event.plot_handle.clone();
-        let plot_entity = event.plot_entity;
+        let plot_entity = event.canvas_entity;
         // if let Some(plot) = materials.get_mut(plot_handle.clone()) {
         if let Some(plot) = plots.get_mut(plot_handle.clone()) {
             let font_size = 16.0;
@@ -184,6 +184,21 @@ pub fn update_plot_labels(
     }
 }
 
+// delays the update of the plot labels until the next frame, after which the
+// plot canvas is definitely spawned
+pub fn wait_for_graph_spawn(
+    mut wait_for_update_labels_event: EventReader<WaitForUpdatePlotLabelsEvent>,
+    mut update_labels_event: EventWriter<UpdatePlotLabelsEvent>,
+    // plots: ResMut<Assets<Plot>>,
+) {
+    for event in wait_for_update_labels_event.iter() {
+        update_labels_event.send(UpdatePlotLabelsEvent {
+            plot_handle: event.plot_handle.clone(),
+            canvas_entity: event.quad_entity,
+        });
+    }
+}
+
 // spawns a graph a shader_param_handle
 pub fn spawn_graph(
     mut commands: Commands,
@@ -192,9 +207,10 @@ pub fn spawn_graph(
     plots: ResMut<Assets<Plot>>,
     mut meshes: ResMut<Assets<Mesh>>,
     // asset_server: Res<AssetServer>,
-    mut update_labels_event: EventWriter<UpdatePlotLabelsEvent>,
+    // mut update_labels_event: EventWriter<UpdatePlotLabelsEvent>,
     // mut spawn_markers_event: EventWriter<SpawnMarkersEvent>,
     // mut spawn_beziercurve_event: EventWriter<SpawnBezierCurveEvent>,
+    mut wait_for_update_labels_event: EventWriter<WaitForUpdatePlotLabelsEvent>,
     mut change_canvas_material_event: EventWriter<ChangeCanvasMaterialEvent>,
 ) {
     for event in spawn_graph_event.iter() {
@@ -220,12 +236,12 @@ pub fn spawn_graph(
             .insert(event.plot_handle.clone())
             .id();
 
-        update_labels_event.send(UpdatePlotLabelsEvent {
+        // TODO after tests: remove this
+        wait_for_update_labels_event.send(WaitForUpdatePlotLabelsEvent {
+            quad_entity: plot_entity.clone(),
             plot_handle: plot_handle.clone(),
-            plot_entity,
         });
 
-        // TODO after tests: remove this
         change_canvas_material_event.send(ChangeCanvasMaterialEvent {
             canvas_material_handle: canvas_material_handle.clone(),
             plot_handle: plot_handle.clone(),
@@ -300,7 +316,7 @@ pub fn change_plot(
     mut windows: ResMut<Windows>,
     // mut change_canvas_material_event: EventWriter<ChangeCanvasMaterialEvent>,
 ) {
-    for (plot_entity, graph_sprite, plot_handle) in graph_sprite_query.iter() {
+    for (canvas_entity, graph_sprite, plot_handle) in graph_sprite_query.iter() {
         // println!("{:?}", "CHANGING SHADER");
         // if let Some(plot) = my_canvas_mat.get_mut(plot_handle) {
         if let Some(plot) = my_plots.get_mut(plot_handle) {
@@ -318,7 +334,7 @@ pub fn change_plot(
 
                     update_plot_labels_event.send(UpdatePlotLabelsEvent {
                         plot_handle: plot_handle.clone(),
-                        plot_entity,
+                        canvas_entity,
                     });
                 }
                 if keyboard_input.pressed(KeyCode::W) {
@@ -329,14 +345,14 @@ pub fn change_plot(
             for wheel_event in mouse_wheel_events.iter() {
                 // println!("{:?}", wheel_event);
 
-                commands.entity(plot_entity).insert(ZoomAxes {
+                commands.entity(canvas_entity).insert(ZoomAxes {
                     wheel_dir: wheel_event.y,
                     mouse_pos: cursor.position,
                 });
 
                 update_plot_labels_event.send(UpdatePlotLabelsEvent {
                     plot_handle: plot_handle.clone(),
-                    plot_entity,
+                    canvas_entity,
                 });
             }
 
@@ -344,14 +360,14 @@ pub fn change_plot(
                 //
                 //
                 if graph_sprite.within_rect(cursor.position) {
-                    commands.entity(plot_entity).insert(MoveAxes);
+                    commands.entity(canvas_entity).insert(MoveAxes);
 
                     // for marker_entity in markers_query.iter() {
                     //     commands.entity(marker_entity).insert(MoveAxes);
                     // }
                 }
 
-                graph_sprite.clicked_on_plot_corner(cursor.position, &mut commands, plot_entity);
+                graph_sprite.clicked_on_plot_corner(cursor.position, &mut commands, canvas_entity);
             }
         }
     }
@@ -402,7 +418,7 @@ pub fn adjust_graph_size(
     // mut change_canvas_material_event: EventWriter<ChangeCanvasMaterialEvent>,
     //
 ) {
-    for (plot_entity, mut graph_sprite, plot_handle, resize_corner, mut transform) in
+    for (canvas_entity, mut graph_sprite, plot_handle, resize_corner, mut transform) in
         graph_sprite_query.iter_mut()
     {
         //
@@ -460,7 +476,7 @@ pub fn adjust_graph_size(
 
             update_labels_event.send(UpdatePlotLabelsEvent {
                 plot_handle: plot_handle.clone(),
-                plot_entity,
+                canvas_entity,
             });
         }
     }
@@ -498,7 +514,7 @@ pub fn adjust_graph_axes(
     let delta_pixels = delta_pixels_vec.iter().fold(Vec2::ZERO, |acc, x| acc + *x);
 
     if delta_pixels != Vec2::ZERO {
-        for (plot_entity, _graph_sprite, plot_handle, material_handle) in query.q0().iter_mut() {
+        for (canvas_entity, _graph_sprite, plot_handle, material_handle) in query.q0().iter_mut() {
             println!("motion: {:?}", delta_pixels);
 
             if let Some(plot) = plots.get_mut(plot_handle) {
@@ -508,7 +524,7 @@ pub fn adjust_graph_axes(
 
                 update_plot_labels_event.send(UpdatePlotLabelsEvent {
                     plot_handle: plot_handle.clone(),
-                    plot_entity,
+                    canvas_entity,
                 });
 
                 change_canvas_material_event.send(ChangeCanvasMaterialEvent {
@@ -522,7 +538,7 @@ pub fn adjust_graph_axes(
     }
 
     // zoom axes using mouse scroll
-    for (plot_entity, _graph_sprite, plot_handle, material_handle, zoom_info) in
+    for (canvas_entity, _graph_sprite, plot_handle, material_handle, zoom_info) in
         query.q1().iter_mut()
     {
         //
@@ -536,12 +552,12 @@ pub fn adjust_graph_axes(
 
             update_plot_labels_event.send(UpdatePlotLabelsEvent {
                 plot_handle: plot_handle.clone(),
-                plot_entity,
+                canvas_entity,
             });
             plot.clamp_tick_period();
         }
 
-        commands.entity(plot_entity).remove::<ZoomAxes>();
+        commands.entity(canvas_entity).remove::<ZoomAxes>();
 
         change_canvas_material_event.send(ChangeCanvasMaterialEvent {
             plot_handle: plot_handle.clone(),
