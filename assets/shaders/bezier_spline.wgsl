@@ -17,6 +17,8 @@ struct BezierCurveUniform {
     inner_canvas_size_in_pixels: float2;
     canvas_position_in_pixels: float2;
     color: float4;
+    size: f32;
+    style: i32;
 };
 
 [[group(2), binding(0)]]
@@ -195,9 +197,8 @@ fn tips(uv: float2, m_in: float4, dy: float2, solid: f32, w: f32 ) -> float4 {
 
 [[stage(fragment)]]
 fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
-    // let width = 0.003 ;
-     let width = 1.0 ;
-    let w = 0.5 + width * bez_uni.zoom  * 1.0;
+     let width = bez_uni.size / 1.0;
+    let w = 1.0 + width * bez_uni.zoom  * 1.0;
     let solid = width * bez_uni.zoom ;
 
     // var out_col = float4(0.2, 0.3, 0.8, 1.00);
@@ -207,9 +208,6 @@ fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
 
     var p0 = in.ends.xy;
     var p1 = in.ends.zw;
-
-    // var p0 = in.control.xy;
-    // var p1 = in.control.zw;
 
     var control = in.control.xy;
     let is_last = in.control.w;
@@ -229,8 +227,8 @@ fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
     let s = smoothStep(0.0 + solid, w  + solid , d.x);
 
     // mechanical look
-    // if (bez_uni.mech > 0.5) {
-    if (false) {
+    if (bez_uni.mech > 0.5) {
+    // if (true) {
         let c0 = sdCircle(in.uv, p0, w);
         let sc0 = smoothStep(0.0 + solid, w + solid , c0);
 

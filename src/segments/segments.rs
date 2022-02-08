@@ -3,10 +3,11 @@ use bevy::{
     core_pipeline::Transparent2d,
     ecs::system::lifetimeless::{Read, SQuery, SRes},
     ecs::system::SystemParamItem,
-    // input::mouse::{MouseMotion, MouseWheel},
     prelude::*,
+    // reflect::TypeUuid,
     render::{
         mesh::GpuBufferInfo,
+        mesh::Indices,
         render_asset::RenderAssets,
         render_component::{ComponentUniforms, DynamicUniformIndex, UniformComponentPlugin},
         render_component::{ExtractComponent, ExtractComponentPlugin},
@@ -16,39 +17,59 @@ use bevy::{
         },
         render_resource::{std140::AsStd140, *},
         renderer::RenderDevice,
+        // texture::BevyDefault,
+        // texture::GpuImage,
         view::VisibleEntities,
-        view::{ComputedVisibility, Msaa, Visibility},
-        RenderApp, RenderStage,
+        RenderApp,
+        RenderStage,
     },
     sprite::{
-        Mesh2dHandle, Mesh2dPipeline, Mesh2dPipelineKey, Mesh2dUniform, SetMesh2dBindGroup,
-        SetMesh2dViewBindGroup,
+        DrawMesh2d, Mesh2dHandle, Mesh2dPipeline, Mesh2dPipelineKey, Mesh2dUniform,
+        SetMesh2dBindGroup, SetMesh2dViewBindGroup,
     },
-    // view::NoFrustumCulling,
 };
 
 use bytemuck::{Pod, Zeroable};
-
 // use crate::canvas::*;
-// use crate::canvas_actions::*;
-use crate::canvas::ChangeCanvasMaterialEvent;
 use crate::inputs::*;
+
 use crate::plot::*;
+
+use crate::canvas::ChangeCanvasMaterialEvent;
 use crate::util::*;
 
-// TODOs:
-// 1) Modify the transform instead of spawning brand new entities
-// this way, the uniform will stay the same
-//
-// 2) Add a way to change the color of the plot.
-// Copilot, do it for me!
+// use flo_curves::*;
+// use itertools_num::linspace;
 
-pub fn markers_setup(
+pub fn change_segment_uni(
+    mut query: Query<&mut SegmentUniform>,
+    mouse_position: Res<Cursor>,
+    mouse_button_input: Res<Input<MouseButton>>,
+) {
+    for mut segment_uni in query.iter_mut() {
+        let mouse_pos = mouse_position.position;
+
+        if mouse_button_input.pressed(MouseButton::Left) {
+            segment_uni.segment_size = mouse_pos.x / 100.0;
+            // println!("left: {}, right: {}", segment_uni.left, segment_uni.mech);
+        } else if mouse_button_input.pressed(MouseButton::Right) {
+            segment_uni.hole_size = mouse_pos.x / 100.0;
+            // segment_uni.ya.x = mouse_pos.x / 100.0;
+            // segment_uni.ya.y = mouse_pos.y / 100.0;
+            println!(
+                "left: {}, right: {}",
+                segment_uni.segment_size, segment_uni.hole_size
+            );
+        }
+    }
+}
+
+pub fn segments_setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut change_canvas_material_event: EventReader<ChangeCanvasMaterialEvent>,
     mut plots: ResMut<Assets<Plot>>,
-    query: Query<(Entity, &Handle<Plot>), With<MarkerUniform>>,
+    query: Query<(Entity, &Handle<Plot>), With<SegmentUniform>>,
 ) {
     for event in change_canvas_material_event.iter() {
         //
@@ -60,7 +81,7 @@ pub fn markers_setup(
 
         let mut plot = plots.get_mut(&event.plot_handle).unwrap();
 
-        plot_points(
+        plot_segments(
             &mut commands,
             &mut meshes,
             // ys,
@@ -70,38 +91,163 @@ pub fn markers_setup(
     }
 }
 
-pub fn plot_points(
+// Compute derivatives at each point
+pub fn make_df(ys: &Vec<Vec2>) -> (Vec<Vec2>, Vec<Vec2>) {
+    let df0 = (ys[1].y - ys[0].y) / (ys[1].x - ys[0].x);
+    let mut dfs = vec![df0];
+    for i in 1..ys.len() - 1 {
+        let y_m1 = ys[i - 1];
+        // let x0 = ys[i];
+        let y1 = ys[i + 1];
+        let dfi = (y1.y - y_m1.y) / (y1.x - y_m1.x);
+
+        dfs.push(dfi);
+    }
+
+    // for the first and last points, we need to extrapolate the first derivative using the second derivative
+    dfs[0] = dfs[1] - (ys[1].x - ys[0].x) * (dfs[2] - dfs[1]) / (ys[2].x - ys[1].x);
+
+    let la = ys.len() - 1;
+    let df_final = dfs[la - 1]
+        - (ys[la - 1].x - ys[la].x) * (dfs[la - 2] - dfs[la - 1]) / (ys[la - 2].x - ys[la - 1].x);
+
+    dfs.push(df_final);
+
+    // derivatives
+    let dfs_vec2 = dfs
+        .iter()
+        .map(|q| Vec2::new(1.0, *q).normalize())
+        .collect::<Vec<Vec2>>();
+
+    // normals
+    let ns_vec2 = dfs
+        .iter()
+        .map(|q| Vec2::new(*q, -1.0).normalize())
+        .collect::<Vec<Vec2>>();
+
+    return (dfs_vec2, ns_vec2);
+}
+
+pub fn plot_segments(
     commands: &mut Commands,
     meshes: &mut ResMut<Assets<Mesh>>,
     plot: &mut Plot,
     plot_handle: &Handle<Plot>,
 ) {
     let data = plot.data.clone();
-    // let color = data.marker_plot.color;
-    for marker_plot in data.marker_plots.iter() {
-        let ys = marker_plot.data.clone();
-        let color = marker_plot.color;
-        let ys_world = plot.plot_to_world(&ys);
+    plot.compute_zeros();
+
+    for segment_plot in data.segment_groups.iter() {
+        let ys = segment_plot.data.clone();
+
+        // derivatives and normals
+        let (dfs, ns) = make_df(&ys);
+        println!("dfs: {:?}", ns);
+
+        let num_pts = ys.len();
+
+        let ys_world = ys.iter().map(|y| plot.to_world(*y)).collect::<Vec<Vec2>>();
+
         let quad_size = 30.0;
+
+        let mut mesh0 = Vec::new();
+        let mut mesh_attr_uvs = Vec::new();
+        let mut inds = Vec::new();
+
+        // TODO
+        let line_width = 30.0;
+        for k in 0..num_pts - 1 {
+            // let quadt_offset = line_width * 1.0;
+
+            // let p0 = Vec2::new(ys_world[k].x - quadt_offset, ys_world[k].y + quadt_offset);
+            // let p1 = Vec2::new(ys_world[k].x - quadt_offset, ys_world[k].y - quadt_offset);
+            // let p2 = Vec2::new(
+            //     ys_world[k + 1].x + quadt_offset,
+            //     ys_world[k].y + quadt_offset,
+            // );
+            // let p3 = Vec2::new(
+            //     ys_world[k + 1].x + quadt_offset,
+            //     ys_world[k].y - quadt_offset,
+            // );
+
+            let y0 = ys_world[k];
+            let y1 = ys_world[k + 1];
+
+            // let theta = (y1.x - y0.x).atan2(y1.y - y0.y);
+
+            // let dy = (y1 - y0).normalize();
+            // let n = Vec2::new(-dy.y, dy.x);
+            let n0 = -ns[k];
+            let n1 = -ns[k + 1];
+
+            let p0 = y0 + n0 * line_width;
+            let p1 = y0 - n0 * line_width;
+            let p2 = y1 + n1 * line_width;
+            let p3 = y1 - n1 * line_width;
+
+            // let r = 50.0;
+            // let p0 = Vec2::new(-r, -r);
+            // let p1 = Vec2::new(-r, r);
+            // let p2 = Vec2::new(r, r);
+            // let p3 = Vec2::new(r, -r);
+
+            mesh0.push(p0);
+            mesh0.push(p1);
+            mesh0.push(p2);
+            mesh0.push(p3);
+
+            mesh_attr_uvs.push([p0.x, p0.y]);
+            mesh_attr_uvs.push([p1.x, p1.y]);
+            mesh_attr_uvs.push([p2.x, p2.y]);
+            mesh_attr_uvs.push([p3.x, p3.y]);
+
+            let ki = k * 4;
+
+            inds.push(ki as u32);
+            inds.push((ki + 1) as u32);
+            inds.push((ki + 2) as u32);
+
+            inds.push((ki + 3) as u32);
+            inds.push((ki + 2) as u32);
+            inds.push((ki + 1) as u32);
+        }
+
+        let mut mesh_pos_attributes: Vec<[f32; 3]> = Vec::new();
+        let mut normals = Vec::new();
+        // TODO: z position is here
+        for position in mesh0 {
+            mesh_pos_attributes.push([position.x, position.y, -30.0]);
+            normals.push([0.0, 0.0, 1.0]);
+        }
+
+        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
+
+        mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, mesh_pos_attributes.clone());
+        mesh.set_attribute(Mesh::ATTRIBUTE_NORMAL, normals.clone());
+
+        mesh.set_attribute(Mesh::ATTRIBUTE_UV_0, mesh_attr_uvs);
+        mesh.set_indices(Some(Indices::U32(inds)));
 
         commands
             .spawn_bundle((
-                Mesh2dHandle(meshes.add(Mesh::from(shape::Quad {
-                    size: Vec2::splat(quad_size),
-                    flip: false,
-                }))),
+                Mesh2dHandle(meshes.add(mesh)),
+                // Mesh2dHandle(meshes.add(Mesh::from(shape::Quad {
+                //     size: Vec2::splat(50.0),
+                //     flip: false,
+                // }))),
                 GlobalTransform::default(),
-                Transform::from_translation(Vec3::new(0.0, 0.0, 20.0)),
+                Transform::from_translation(Vec3::new(0.0, 0.0, 3.0) + plot.position.extend(0.0)),
                 Visibility::default(),
                 ComputedVisibility::default(),
-                MarkerInstanceMatData(
+                SegmentInstanceMatData(
                     ys_world
                         .iter()
-                        .map(|v| MarkerInstanceData {
+                        .map(|v| SegmentInstanceData {
                             //
                             // TODO: take inner border into account
                             //
-                            position: Vec3::new(v.x, v.y, 0.0) + plot.position.extend(20.0),
+                            // position: Vec3::new(v.x, v.y, 20.0) + plot.position.extend(0.0),
+                            position: Vec3::new(0.0, 0.0, 20.0) + plot.position.extend(0.0),
                             scale: 1.0,
                             color: Color::rgba(0.8, 0.6, 0.1, 1.0).as_rgba_f32(),
                         })
@@ -110,55 +256,35 @@ pub fn plot_points(
                 // NoFrustumCulling,
             ))
             .insert(plot_handle.clone())
-            .insert(MarkerUniform {
-                point_size: 0.5,
+            .insert(SegmentUniform {
+                segment_size: segment_plot.size,
                 hole_size: 1.0,
                 zoom: 1.0,
-                point_type: 4,
+
+                segment_point_color: col_to_vec4(segment_plot.segment_point_color),
+                color: col_to_vec4(segment_plot.color),
                 quad_size,
                 inner_canvas_size_in_pixels: plot.size / (1.0 + plot.outer_border),
-                // outer_border: plot.outer_border,
                 canvas_position: plot.position,
-                color: col_to_vec4(color),
+                contour: if segment_plot.draw_contour { 1.0 } else { 0.0 },
             });
     }
 }
 
-pub fn change_marker_uni(
-    mut query: Query<&mut MarkerUniform>,
-    mouse_position: Res<Cursor>,
-    mouse_button_input: Res<Input<MouseButton>>,
-) {
-    for mut custom_uni in query.iter_mut() {
-        let mouse_pos = mouse_position.position;
-
-        if mouse_button_input.pressed(MouseButton::Right) {
-            custom_uni.point_size = mouse_pos.x / 100.0;
-            println!("{:?}", custom_uni.point_size);
-            // println!("{}", custom_uni.ya.z);
-        }
-        // else if mouse_button_input.pressed(MouseButton::Right) {
-        //     custom_uni.ya.x = mouse_pos.x / 100.0;
-        //     custom_uni.ya.y = mouse_pos.y / 100.0;
-        // }
-        // println!("{:?}", custom_uni.ya);
-    }
-}
-
 #[derive(Component)]
-pub struct MarkerInstanceMatData(Vec<MarkerInstanceData>);
-impl ExtractComponent for MarkerInstanceMatData {
-    type Query = &'static MarkerInstanceMatData;
+pub struct SegmentInstanceMatData(Vec<SegmentInstanceData>);
+impl ExtractComponent for SegmentInstanceMatData {
+    type Query = &'static SegmentInstanceMatData;
     type Filter = ();
 
     fn extract_component(item: bevy::ecs::query::QueryItem<Self::Query>) -> Self {
-        MarkerInstanceMatData(item.0.clone())
+        SegmentInstanceMatData(item.0.clone())
     }
 }
 
-/// A marker component for colored 2d meshes
+/// A segment component for colored 2d meshes
 #[derive(Component, Default)]
-pub struct MarkerMesh2d;
+pub struct SegmentMesh2d;
 
 #[derive(Clone, AsStd140)]
 pub struct BoundsWorld {
@@ -167,43 +293,45 @@ pub struct BoundsWorld {
 }
 
 #[derive(Component, Clone, AsStd140)]
-pub struct MarkerUniform {
-    pub point_size: f32,
+pub struct SegmentUniform {
+    pub segment_size: f32,
     pub hole_size: f32,
     pub zoom: f32,
-    pub point_type: u32,
     pub quad_size: f32,
+    pub contour: f32,
     pub inner_canvas_size_in_pixels: Vec2,
     pub canvas_position: Vec2,
     pub color: Vec4,
+    pub segment_point_color: Vec4,
 }
+
+// TODO: we have instance data, but we don't use it at the moment.
+// One use case would be to have segment size as an additional dimension.
 
 #[derive(Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
-struct MarkerInstanceData {
+struct SegmentInstanceData {
     position: Vec3,
     scale: f32,
-    // ends: [f32; 4],
-    // controls: [f32; 4],
     color: [f32; 4],
 }
 
 /// Custom pipeline for 2d meshes with vertex colors
-pub struct MarkerMesh2dPipeline {
+pub struct SegmentMesh2dPipeline {
     /// this pipeline wraps the standard [`Mesh2dPipeline`]
     mesh2d_pipeline: Mesh2dPipeline,
-    pub custom_uniform_layout: BindGroupLayout,
+    pub segment_uniform_layout: BindGroupLayout,
     pub shader: Handle<Shader>,
     // material_layout: BindGroupLayout,
 }
 
-impl FromWorld for MarkerMesh2dPipeline {
+impl FromWorld for SegmentMesh2dPipeline {
     fn from_world(world: &mut World) -> Self {
         let mesh2d_pipeline = Mesh2dPipeline::from_world(world).clone();
 
         let render_device = world.get_resource::<RenderDevice>().unwrap();
 
-        let custom_uniform_layout =
+        let segment_uniform_layout =
             render_device.create_bind_group_layout(&BindGroupLayoutDescriptor {
                 entries: &[BindGroupLayoutEntry {
                     binding: 0,
@@ -212,31 +340,31 @@ impl FromWorld for MarkerMesh2dPipeline {
                         ty: BufferBindingType::Uniform,
                         has_dynamic_offset: true,
                         min_binding_size: BufferSize::new(
-                            MarkerUniform::std140_size_static() as u64
+                            SegmentUniform::std140_size_static() as u64
                         ),
                     },
                     count: None,
                 }],
-                label: Some("markers_uniform_layout"),
+                label: Some("segments_uniform_layout"),
             });
 
         let world = world.cell();
         let asset_server = world.get_resource::<AssetServer>().unwrap();
 
-        let shader = asset_server.load("shaders/markers.wgsl");
+        let shader = asset_server.load("shaders/segments.wgsl");
 
         let _result = asset_server.watch_for_changes();
 
         Self {
             mesh2d_pipeline,
-            custom_uniform_layout,
+            segment_uniform_layout,
 
             shader,
         }
     }
 }
 
-impl SpecializedPipeline for MarkerMesh2dPipeline {
+impl SpecializedPipeline for SegmentMesh2dPipeline {
     type Key = Mesh2dPipelineKey;
 
     fn specialize(&self, key: Self::Key) -> RenderPipelineDescriptor {
@@ -244,7 +372,7 @@ impl SpecializedPipeline for MarkerMesh2dPipeline {
 
         descriptor.vertex.shader = self.shader.clone();
         descriptor.vertex.buffers.push(VertexBufferLayout {
-            array_stride: std::mem::size_of::<MarkerInstanceData>() as u64,
+            array_stride: std::mem::size_of::<SegmentInstanceData>() as u64,
             step_mode: VertexStepMode::Instance,
             attributes: vec![
                 VertexAttribute {
@@ -268,7 +396,7 @@ impl SpecializedPipeline for MarkerMesh2dPipeline {
         descriptor.layout = Some(vec![
             self.mesh2d_pipeline.view_layout.clone(),
             self.mesh2d_pipeline.mesh_layout.clone(),
-            self.custom_uniform_layout.clone(),
+            self.segment_uniform_layout.clone(),
         ]);
 
         descriptor
@@ -276,51 +404,51 @@ impl SpecializedPipeline for MarkerMesh2dPipeline {
 }
 
 // This specifies how to render a colored 2d mesh
-type DrawMarkerMesh2d = (
+type DrawSegmentMesh2d = (
     // Set the pipeline
     SetItemPipeline,
     // Set the view uniform as bind group 0
     SetMesh2dViewBindGroup<0>,
     // Set the mesh uniform as bind group 1
     SetMesh2dBindGroup<1>,
-    // Set the marker uniform as bind group 2
-    SetMarkerUniformBindGroup<2>,
+    // Set the segment uniform as bind group 2
+    SetSegmentUniformBindGroup<2>,
     // Draw the mesh
-    DrawMarkerMeshInstanced,
+    DrawSegmentMeshInstanced,
 );
 
-pub struct MarkerMesh2dPlugin;
+pub struct SegmentMesh2dPlugin;
 
-impl Plugin for MarkerMesh2dPlugin {
+impl Plugin for SegmentMesh2dPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugin(UniformComponentPlugin::<MarkerUniform>::default());
-        app.add_plugin(ExtractComponentPlugin::<MarkerInstanceMatData>::default());
+        app.add_plugin(UniformComponentPlugin::<SegmentUniform>::default());
+        app.add_plugin(ExtractComponentPlugin::<SegmentInstanceMatData>::default());
 
         // Register our custom draw function and pipeline, and add our render systems
         let render_app = app.get_sub_app_mut(RenderApp).unwrap();
         render_app
-            .add_render_command::<Transparent2d, DrawMarkerMesh2d>()
-            .init_resource::<MarkerMesh2dPipeline>()
-            .init_resource::<SpecializedPipelines<MarkerMesh2dPipeline>>()
+            .add_render_command::<Transparent2d, DrawSegmentMesh2d>()
+            .init_resource::<SegmentMesh2dPipeline>()
+            .init_resource::<SpecializedPipelines<SegmentMesh2dPipeline>>()
             .add_system_to_stage(RenderStage::Prepare, prepare_instance_buffers)
             .add_system_to_stage(RenderStage::Extract, extract_colored_mesh2d)
-            .add_system_to_stage(RenderStage::Queue, queue_marker_uniform_bind_group)
-            .add_system_to_stage(RenderStage::Queue, queue_colored_mesh2d);
+            .add_system_to_stage(RenderStage::Queue, queue_segment_uniform_bind_group)
+            .add_system_to_stage(RenderStage::Queue, queue_segment_mesh2d);
     }
 }
 
-/// Extract MarkerUniform
+/// Extract SegmentUniform
 pub fn extract_colored_mesh2d(
     mut commands: Commands,
     mut previous_len: Local<usize>,
-    query: Query<(Entity, &MarkerUniform, &ComputedVisibility), With<MarkerInstanceMatData>>,
+    query: Query<(Entity, &SegmentUniform, &ComputedVisibility), With<SegmentInstanceMatData>>,
 ) {
     let mut values = Vec::with_capacity(*previous_len);
-    for (entity, custom_uni, computed_visibility) in query.iter() {
+    for (entity, segment_uni, computed_visibility) in query.iter() {
         if !computed_visibility.is_visible {
             continue;
         }
-        values.push((entity, (custom_uni.clone(), MarkerMesh2d)));
+        values.push((entity, (segment_uni.clone(), SegmentMesh2d)));
     }
     *previous_len = values.len();
     commands.insert_or_spawn_batch(values);
@@ -328,55 +456,55 @@ pub fn extract_colored_mesh2d(
 
 fn prepare_instance_buffers(
     mut commands: Commands,
-    query: Query<(Entity, &MarkerInstanceMatData)>,
+    query: Query<(Entity, &SegmentInstanceMatData)>,
     render_device: Res<RenderDevice>,
 ) {
     for (entity, instance_data) in query.iter() {
         let buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
-            label: Some("marker instance data buffer"),
+            label: Some("segment instance data buffer"),
             contents: bytemuck::cast_slice(instance_data.0.as_slice()),
             usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
         });
-        commands.entity(entity).insert(MarkerInstanceBuffer {
+        commands.entity(entity).insert(SegmentInstanceBuffer {
             buffer,
             length: instance_data.0.len(),
         });
     }
 }
 
-pub struct MarkerUniformBindGroup {
+pub struct SegmentUniformBindGroup {
     pub value: BindGroup,
 }
 
-pub fn queue_marker_uniform_bind_group(
+pub fn queue_segment_uniform_bind_group(
     mut commands: Commands,
-    mesh2d_pipeline: Res<MarkerMesh2dPipeline>,
+    mesh2d_pipeline: Res<SegmentMesh2dPipeline>,
     render_device: Res<RenderDevice>,
-    mesh2d_uniforms: Res<ComponentUniforms<MarkerUniform>>,
+    mesh2d_uniforms: Res<ComponentUniforms<SegmentUniform>>,
 ) {
     if let Some(binding) = mesh2d_uniforms.uniforms().binding() {
-        commands.insert_resource(MarkerUniformBindGroup {
+        commands.insert_resource(SegmentUniformBindGroup {
             value: render_device.create_bind_group(&BindGroupDescriptor {
                 entries: &[BindGroupEntry {
                     binding: 0,
                     resource: binding,
                 }],
-                label: Some("MarkersUniform_bind_group"),
-                layout: &mesh2d_pipeline.custom_uniform_layout,
+                label: Some("SegmentsUniform_bind_group"),
+                layout: &mesh2d_pipeline.segment_uniform_layout,
             }),
         });
     }
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn queue_colored_mesh2d(
+pub fn queue_segment_mesh2d(
     transparent_draw_functions: Res<DrawFunctions<Transparent2d>>,
-    colored_mesh2d_pipeline: Res<MarkerMesh2dPipeline>,
-    mut pipelines: ResMut<SpecializedPipelines<MarkerMesh2dPipeline>>,
+    colored_mesh2d_pipeline: Res<SegmentMesh2dPipeline>,
+    mut pipelines: ResMut<SpecializedPipelines<SegmentMesh2dPipeline>>,
     mut pipeline_cache: ResMut<RenderPipelineCache>,
     msaa: Res<Msaa>,
     render_meshes: Res<RenderAssets<Mesh>>,
-    colored_mesh2d: Query<(&Mesh2dHandle, &Mesh2dUniform), With<MarkerInstanceMatData>>,
+    colored_mesh2d: Query<(&Mesh2dHandle, &Mesh2dUniform), With<SegmentInstanceMatData>>,
     mut views: Query<(&VisibleEntities, &mut RenderPhase<Transparent2d>)>,
 ) {
     if colored_mesh2d.is_empty() {
@@ -387,7 +515,7 @@ pub fn queue_colored_mesh2d(
     for (visible_entities, mut transparent_phase) in views.iter_mut() {
         let draw_colored_mesh2d = transparent_draw_functions
             .read()
-            .get_id::<DrawMarkerMesh2d>()
+            .get_id::<DrawSegmentMesh2d>()
             .unwrap();
 
         let mesh_key = Mesh2dPipelineKey::from_msaa_samples(msaa.samples);
@@ -417,11 +545,11 @@ pub fn queue_colored_mesh2d(
     }
 }
 
-pub struct SetMarkerUniformBindGroup<const I: usize>;
-impl<const I: usize> EntityRenderCommand for SetMarkerUniformBindGroup<I> {
+pub struct SetSegmentUniformBindGroup<const I: usize>;
+impl<const I: usize> EntityRenderCommand for SetSegmentUniformBindGroup<I> {
     type Param = (
-        SRes<MarkerUniformBindGroup>,
-        SQuery<Read<DynamicUniformIndex<MarkerUniform>>>,
+        SRes<SegmentUniformBindGroup>,
+        SQuery<Read<DynamicUniformIndex<SegmentUniform>>>,
     );
     #[inline]
     fn render<'w>(
@@ -442,17 +570,17 @@ impl<const I: usize> EntityRenderCommand for SetMarkerUniformBindGroup<I> {
 }
 
 #[derive(Component)]
-pub struct MarkerInstanceBuffer {
+pub struct SegmentInstanceBuffer {
     buffer: Buffer,
     length: usize,
 }
 
-pub struct DrawMarkerMeshInstanced;
-impl EntityRenderCommand for DrawMarkerMeshInstanced {
+pub struct DrawSegmentMeshInstanced;
+impl EntityRenderCommand for DrawSegmentMeshInstanced {
     type Param = (
         SRes<RenderAssets<Mesh>>,
         SQuery<Read<Mesh2dHandle>>,
-        SQuery<Read<MarkerInstanceBuffer>>,
+        SQuery<Read<SegmentInstanceBuffer>>,
     );
     #[inline]
     fn render<'w>(

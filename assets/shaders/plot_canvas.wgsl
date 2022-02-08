@@ -365,21 +365,38 @@ fn fragment(in: VertexOutput) -> [[location(0)]] vec4<f32> {
     /////////////////// borders /////////////////////////
 
 
+    // /////////////////// mouse target /////////////////////////
+    // // rect = draw_circle(rect, uv, rad*2. , black, ann, mate.mouse_pos);
+    // let gray = vec4<f32>(1.0, 1.0, 1.0, 1.0) * 0.5;
+    // // let aspect_ratio = mate.size.y / mate.size.x;
+    // // let aspect_ratio = 1.0;
+    // let target_thickness = 0.5 * mate.globals.zoom;
+    // let pos_edges = edges - mate.position;
+
+    // segment.start = float2( mate.mouse_pos.x, -pos_edges.y ) ;
+    // segment.end = float2(  mate.mouse_pos.x, pos_edges.y ) ;
+    // rect = draw_segment(target_thickness , rect, in.uv  , segment, gray, bar_alpha) ;
+
+    // segment.start = float2(-pos_edges.x,  mate.mouse_pos.y);
+    // segment.end = float2( pos_edges.x,  mate.mouse_pos.y);
+    // rect = draw_segment(target_thickness , rect, in.uv  , segment, gray, bar_alpha) ;
+    // /////////////////// mouse target /////////////////////////
+
     /////////////////// mouse target /////////////////////////
     // rect = draw_circle(rect, uv, rad*2. , black, ann, mate.mouse_pos);
     let gray = vec4<f32>(1.0, 1.0, 1.0, 1.0) * 0.5;
-    // let aspect_ratio = mate.size.y / mate.size.x;
+    let aspect_ratio = mate.size.y / mate.size.x;
     // let aspect_ratio = 1.0;
-    let target_thickness = 0.5 * mate.globals.zoom;
-    let pos_edges = edges - mate.position;
+    let target_thickness = 0.005 * mate.globals.zoom;
+    let pos_edges = edges ;
 
     segment.start = float2( mate.mouse_pos.x, -pos_edges.y ) ;
     segment.end = float2(  mate.mouse_pos.x, pos_edges.y ) ;
-    rect = draw_segment(target_thickness , rect, in.uv  , segment, gray, bar_alpha) ;
+    rect = draw_segment(target_thickness * aspect_ratio * 0.85, rect, uv  , segment, gray, bar_alpha) ;
 
     segment.start = float2(-pos_edges.x,  mate.mouse_pos.y);
     segment.end = float2( pos_edges.x,  mate.mouse_pos.y);
-    rect = draw_segment(target_thickness , rect, in.uv  , segment, gray, bar_alpha) ;
+    rect = draw_segment(target_thickness , rect, uv  , segment, gray, bar_alpha) ;
     /////////////////// mouse target /////////////////////////
 
 

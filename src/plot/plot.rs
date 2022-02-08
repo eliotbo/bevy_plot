@@ -4,11 +4,13 @@ use bevy::{
 };
 
 use super::plot_format::*;
+use super::colors::make_color_palette;
 use crate::bezier::*;
 use crate::canvas::*;
 use crate::inputs::*;
 use crate::markers::*;
 use crate::util::*;
+use crate::segments::*;
 
 pub struct PlotPlugin;
 
@@ -19,12 +21,14 @@ impl Plugin for PlotPlugin {
             .add_plugin(Material2dPlugin::<CanvasMaterial>::default())
             .add_plugin(MarkerMesh2dPlugin)
             .add_plugin(BezierMesh2dPlugin)
+            .add_plugin(SegmentMesh2dPlugin)
             .add_event::<SpawnGraphEvent>()
             .add_event::<ReleaseAllEvent>()
             .add_event::<UpdatePlotLabelsEvent>()
             .add_event::<ChangeCanvasMaterialEvent>()
-            .add_event::<SpawnBezierCurveEvent>()
+            // .add_event::<SpawnBezierCurveEvent>()
             .add_asset::<Plot>()
+            .insert_resource(make_color_palette())
             .insert_resource(Cursor::default())
 
             .add_system_set(
@@ -33,22 +37,23 @@ impl Plugin for PlotPlugin {
                 .with_system(change_plot)
                 .with_system(update_plot_labels)
             )
+
             .add_system_set(
                 SystemSet::new().label("updates").before("axes")
                 .with_system(update_canvas_material)
                 .with_system(spawn_bezier_function)
-                
             )
        
             .add_system(release_all)
             .add_system(spawn_graph)
-            
             .add_system(adjust_graph_size)
             .add_system(record_mouse_events_system)
             .add_system(change_bezier_uni)
             .add_system(change_marker_uni)
+            .add_system(change_segment_uni)
             .add_system(update_mouse_target)
             .add_system(markers_setup.exclusive_system().at_end())
+            .add_system(segments_setup.exclusive_system().at_end())
             // ...
             ;
     }
@@ -82,8 +87,9 @@ impl Default for PlotGlobals {
 // struct containing the data to be plotted and the color of the curves
 pub struct BezierData {
     pub function: fn(f32) -> f32,
-    // pub function:  Yo, //Box<dyn Fn(i32) -> i32>,
-    
+    pub size: f32,
+    pub line_style: LineStyle,
+    pub draw_contour: bool,
     pub color: Color,
 }
 
@@ -93,6 +99,9 @@ impl Default for BezierData {
             // data: vec![],
             function: |x: f32| x, // Vec<fn(f32) -> f32>,
             color: Color::rgb(0.2, 0.3, 0.8),
+            size: 1.0,
+            line_style: LineStyle::Solid,
+            draw_contour: false,
         }
     }
 }
@@ -108,6 +117,10 @@ impl Default for BezierData {
 pub struct MarkerData {
     pub data: Vec<Vec2>,
     pub color: Color,
+    pub marker_point_color: Color,
+    pub marker_style: MarkerStyle,
+    pub size: f32,
+    pub draw_contour: bool,
 }
 
 impl Default for MarkerData {
@@ -115,6 +128,10 @@ impl Default for MarkerData {
         MarkerData {
             data: vec![],
             color: Color::rgb(0.5, 0.5, 0.1),
+            marker_point_color: Color::rgb(0.2, 0.3, 0.8),
+            marker_style: MarkerStyle::Circle,
+            size: 1.0,
+            draw_contour: true,
         }
     }
 }
@@ -123,47 +140,114 @@ impl Default for MarkerData {
 pub struct SegmentData {
     pub data: Vec<Vec2>,
     pub color: Color,
+    pub segment_point_color: Color,
+    pub size: f32,
+    pub line_style: LineStyle,
+    pub draw_contour: bool,
 }
 
 impl Default for SegmentData {
     fn default() -> Self {
         SegmentData {
             data: vec![],
-            color: Color::rgb(0.2, 0.3, 0.8),
+            color: Color::rgb(0.6, 0.3, 0.2),
+            segment_point_color: Color::rgb(0.2, 0.3, 0.8),
+            size: 1.0,
+            line_style: LineStyle::Solid,
+            draw_contour: false,
         }
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct PlotData {
-    pub marker_plots: Vec<MarkerData>,
-    pub segment_plots: Vec<SegmentData>,
-    pub bezier_plots: Vec<BezierData>,
+    pub marker_groups: Vec<MarkerData>,
+    pub segment_groups: Vec<SegmentData>,
+    pub bezier_groups: Vec<BezierData>,
     
 }
 
 impl Default for PlotData {
     fn default() -> Self {
         PlotData {
-            // marker_plot: MarkerData::default(),
-            // segment_plot: SegmentData::default(),
-            // bezier_plot: BezierData::default(),
-            marker_plots: Vec::new(),
-            segment_plots: Vec::new(),
-            bezier_plots: Vec::new(), 
+            marker_groups: Vec::new(),
+            segment_groups: Vec::new(),
+            bezier_groups: Vec::new(), 
         }
     }
 }
 
 #[derive(Debug, Clone)]
-pub enum PlotOption {
+pub enum MarkerStyle {
+    Circle,
+    Square,
+    Triangle,
+    Heart,
+    Cross,
+    Rhombus,
+    Star,
+    Moon,
+    X,
+}
+
+impl MarkerStyle {
+    pub fn to_int32(&self) -> i32 {
+        match self {
+            MarkerStyle::Square => 0,
+            MarkerStyle::Heart => 1,
+            MarkerStyle::Triangle => 3,
+            MarkerStyle::Rhombus => 2,
+            MarkerStyle::Star => 4,
+            
+            MarkerStyle::Moon => 5,
+            MarkerStyle::Cross => 6,
+            MarkerStyle::X => 7,
+            
+             _ => 8, // Circle
+        }
+    }
+}
+#[derive(Debug, Clone)]
+pub enum LineStyle{
+    Solid,
+    Dashed,
+    Dotted,
+    DashDot,
+    DashDotDot,
+}
+
+impl LineStyle {
+    pub fn to_int32(&self) -> i32 {
+        match self {
+            LineStyle::Solid => 0,
+            LineStyle::Dashed => 1,
+            LineStyle::Dotted => 2,
+            LineStyle::DashDot => 3,
+            LineStyle::DashDotDot => 4,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+// Options as the second argument the of plotop method
+pub enum Opt {
     Color(Color),
+    Size(f32),
+    Contour(bool),
+
+    // Bezier curve and segments only
+    LineStyle(LineStyle),
+
+    // markers only
+    MarkerStyle(MarkerStyle),
+    MarkerInnerPointColor(Color),
+    
 }
 
 
 #[derive(Debug, Clone)]
 pub struct PlotOptions {
-    pub ptype: Option<PlotType>,
+    pub plot_type: Option<PlotType>,
 }
 
 #[derive(Debug, Clone)]
@@ -226,7 +310,7 @@ impl Default for Plot {
 
             data: PlotData::default(),
 
-            options: PlotOptions { ptype: None },
+            options: PlotOptions { plot_type: None },
 
             bezier_num_points: 100,
 
@@ -242,9 +326,79 @@ impl Default for Plot {
     }
 }
 
+
+
 impl Plot {
-    pub fn pelotte<T: Plotable>(&mut self, v: T, options: Vec<PlotOptions>) {
+    pub fn plotopt<T: Plotable>(&mut self, v: T, options: Vec<Opt>) {
         //
+        let pf: PlotFormat = v.into_plot_format();
+        let mut plot_type = pf.ptype;
+
+        // coerce plot type if specified in plot options
+        if let Some(ptype) = self.options.plot_type.clone() {
+            plot_type = ptype;
+        }
+
+        match plot_type {
+            PlotType::Marker => {
+                let mut data = MarkerData {
+                    data: pf.data,
+                    ..Default::default() 
+                };
+
+                for option in options.iter() {
+                    match option {
+                        Opt::Color(col) => { data.color = *col; },
+
+                        Opt::Size(si)=> {
+                            data.size = *si;
+                        },
+                        Opt::MarkerStyle(style)=> { data.marker_style = style.clone(); },
+                        Opt::MarkerInnerPointColor(col)=> { data.marker_point_color = col.clone();},
+                        Opt::LineStyle(_)=> {  eprintln!("LineStyle is not a valid option for markers"); },
+                        Opt::Contour(cont)=> { data.draw_contour = *cont; },
+                    }
+                }
+                
+                self.data.marker_groups.push(data);
+                self.send_plot_event.markers = true;
+            }
+            PlotType::Segment => {
+                let mut data = SegmentData {
+                    data: pf.data,
+                    ..Default::default() 
+                };
+
+                for option in options.iter() {
+                    match option {
+                        Opt::Color(col) => { data.color = *col; },
+
+                        Opt::Size(si)=> {
+                            data.size = *si;
+                        },
+                        Opt::LineStyle(style)=> { data.line_style = style.clone(); },
+
+                        Opt::Contour(cont)=> { data.draw_contour = *cont;  },
+
+                        Opt::MarkerStyle(_)=> { 
+                            eprintln!("MarkerStyle is not a valid option for segments"); 
+                            },
+                        Opt::MarkerInnerPointColor(_)=> {  
+                            eprintln!("MarkerInnerPointColor is not a valid option for segments"); 
+                            },
+                        
+                        
+                        
+                    }
+                }
+                
+                self.data.segment_groups.push(data);
+                self.send_plot_event.segments = true;
+
+            }
+            _ => { println!("argument cannot be parsed") }
+
+        }
     } 
 
     pub fn plot<T: Plotable>(&mut self, v: T) {
@@ -254,7 +408,7 @@ impl Plot {
         let mut plot_type = pf.ptype;
 
         // coerce plot type if specified in plot options
-        if let Some(ptype) = self.options.ptype.clone() {
+        if let Some(ptype) = self.options.plot_type.clone() {
             plot_type = ptype;
         }
 
@@ -262,56 +416,73 @@ impl Plot {
             PlotType::Marker => {
                 let new_data = MarkerData {
                     data: pf.data,
-                    color: MarkerData::default().color,
+                    ..Default::default()                   
                 };
                 
-                self.data.marker_plots.push(new_data);
+                self.data.marker_groups.push(new_data);
                 self.send_plot_event.markers = true;
             }
             PlotType::Segment => {
-                                let new_data = SegmentData {
+                let new_data = SegmentData {
                     data: pf.data,
-                    color: SegmentData::default().color,
+                    ..Default::default()  
                 };
                 
-                self.data.segment_plots.push(new_data);
+                self.data.segment_groups.push(new_data);
                 self.send_plot_event.segments = true;
 
-                // self.data.segment_plot.data.push(pf.data);
             }
             _ => { println!("argument cannot be parsed") }
-            // PlotType::Bezier => {
-                
-            //     let new_data = BezierData {
-            //         function: pf.maybe_func.unwrap(),
-            //         color: BezierData::default().color,
-            //     };
-                
-            //     self.data.bezier_plots.push(new_data);
-            //     self.send_plot_event.bezier = true;
 
-
-            //     // self.data.bezier_plot.data.push(pf.data);
-            //     // self.send_plot_event.bezier = true;
-            // }
         }
 
-        // for (i, mut data_point) in pf.iter().enumerate() {
-        //     self.data[index][i] = Vec4::new(data_point.0, data_point.1, 0.0, 1.0);
-        // }
-
-        // self.lines_params[index].number_of_points = pf.len() as i32;
-        // self.lines_params[index].transparency = 0.5;
     }
 
     pub fn plot_analytical(&mut self, f: fn(f32) -> f32) {
         // self.smooth_functions.push(f);
         let new_data = BezierData {
             function: f,
-            color: BezierData::default().color,
+            ..Default::default()
         };
                 
-        self.data.bezier_plots.push(new_data);
+        self.data.bezier_groups.push(new_data);
+        self.send_plot_event.bezier = true;
+
+    }
+
+    pub fn plotopt_analytical(&mut self, f: fn(f32) -> f32, options: Vec<Opt>) {
+        // self.smooth_functions.push(f);
+        let mut data = BezierData {
+            function: f,
+            ..Default::default()
+        };
+
+
+        for option in options.iter() {
+            match option {
+                Opt::Color(col) => { data.color = *col; },
+
+                Opt::Size(si)=> {
+                    data.size = *si;
+                },
+                Opt::LineStyle(style)=> { data.line_style = style.clone(); },
+
+                Opt::Contour(cont)=> { data.draw_contour = *cont;  },
+
+                Opt::MarkerStyle(_)=> { 
+                    eprintln!("MarkerStyle is not a valid option for segments"); 
+                    },
+                Opt::MarkerInnerPointColor(_)=> {  
+                    eprintln!("MarkerInnerPointColor is not a valid option for segments"); 
+                    },
+
+                
+            }
+        }
+                
+
+                
+        self.data.bezier_groups.push(data);
         self.send_plot_event.bezier = true;
 
     }
@@ -331,8 +502,6 @@ impl Plot {
             self.relative_mouse_pos - (self.relative_mouse_pos - self.bounds.lo) * multiplier;
 
         self.globals.zoom *= multiplier;
-
-        // self.update_thickness(multiplier);
     }
 
     pub fn move_axes(&mut self, mouse_delta: Vec2) {
@@ -371,44 +540,30 @@ impl Plot {
                 / (self.bounds.up.y - self.bounds.lo.y),
         );
 
-        self.zero_world = lo_world - v + self.position * 0.0;
-
-        // let bottom_left = -self.size / 2.0 / (1.0 + self.outer_border);
-
-        // self.zero_world = Vec2::new(
-        //     lo_world.x - self.bounds.lo.x * self.size.x / (1.0 + self.outer_border.x),
-        //     lo_world.y - self.bounds.lo.y * self.size.y / (1.0 + self.outer_border.y),
-        // );
+        self.zero_world = lo_world - v ;
     }
 
     pub fn compute_bounds_world(&self) -> PlotCanvasBounds {
-        let lo = self.zero_world
-            + self.bounds.lo * self.size
-                / (self.bounds.up - self.bounds.lo)
-                / (1.0 + self.outer_border.x);
 
-        let up = self.zero_world
-            + self.bounds.up * self.size
-                / (self.bounds.up - self.bounds.lo)
-                / (1.0 + self.outer_border.x);
+        let lo = self.to_world(self.bounds.lo);
+        let up = self.to_world(self.bounds.up);
 
         PlotCanvasBounds { up, lo }
     }
 
-    // TODO: take inner border into account
-    pub fn plot_to_world(&self, ys: &Vec<Vec2>) -> Vec<Vec2> {
-        ys.iter()
-            .map(|v| {
+    pub fn to_world(&self, v: Vec2) -> Vec2 {
+
                 self.zero_world
-                    + *v * self.size
+                    + v * self.size
                         / (self.bounds.up - self.bounds.lo)
                         / (1.0 + self.outer_border.x)
 
-                // Vec2::new(
-                //     self.zero_world.x + v.x * self.size.x / (self.bounds.up.x - self.bounds.lo.x),
-                //     self.zero_world.y + v.y * self.size.y / (self.bounds.up.y - self.bounds.lo.y),
-                // )
-            })
-            .collect::<Vec<Vec2>>()
+
+    }
+
+    pub fn world_to_plot(&self, y: Vec2) -> Vec2 {
+        (y - self.zero_world - self.position) * (self.bounds.up - self.bounds.lo)
+            / self.size
+            * (1.0 + self.outer_border) 
     }
 }

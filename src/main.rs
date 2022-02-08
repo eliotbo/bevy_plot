@@ -6,6 +6,9 @@ use canvas::*;
 pub mod markers;
 pub use markers::*;
 
+pub mod segments;
+pub use segments::*;
+
 mod inputs;
 mod util;
 // use util::*;
@@ -18,6 +21,7 @@ use plot::*;
 // use inputs::*;
 
 use itertools_num::linspace;
+use std::collections::HashMap;
 
 fn main() {
     App::new()
@@ -62,6 +66,7 @@ fn setup(
     mut commands: Commands,
     mut spawn_graph_event: EventWriter<SpawnGraphEvent>,
     // mut materials: ResMut<Assets<CanvasMaterial>>,
+    colors_res: Res<HashMap<PlotColor, Vec<Color>>>,
     mut plots: ResMut<Assets<Plot>>,
 ) {
     // commands.spawn_bundle(OrthographicCameraBundle::new_2d());
@@ -78,6 +83,7 @@ fn setup(
         ..OrthographicCameraBundle::new_2d()
     });
 
+    let colors = colors_res.as_ref();
     let mut plot = Plot::default();
 
     plot.compute_zeros();
@@ -100,10 +106,23 @@ fn setup(
         .map(|x| Vec2::new(*x, f(*x)))
         .collect::<Vec<Vec2>>();
 
-    plot.plot(ys);
+    let marker_style = Opt::MarkerStyle(MarkerStyle::Cross);
+    let marker_size = Opt::Size(0.75);
+    // let marker_color = Opt::Color(Color::rgb(0.2, 0.8, 0.6));
+    let marker_color = Opt::Color(colors.get(&PlotColor::Yellow).unwrap()[5]);
+    let marker_contour = Opt::Contour(true);
+    let marker_options = vec![marker_style, marker_size, marker_color, marker_contour];
+    plot.plotopt(ys, marker_options);
 
     plot.plot_analytical(easing_func);
-    plot.plot_analytical(|x: f32| x * x);
+
+    // quadratic curve
+    let quad_style = Opt::LineStyle(LineStyle::Solid);
+    // let quad_color = Opt::Color(Color::rgb(0.1, 0.5, 0.0));
+    let quad_color = Opt::Color(colors.get(&PlotColor::Orange).unwrap()[5]);
+    let quad_size = Opt::Size(2.0);
+    let quad_options = vec![quad_style, quad_color, quad_size];
+    plot.plotopt_analytical(|x: f32| x * x, quad_options);
 
     let plot_handle = plots.add(plot.clone());
 

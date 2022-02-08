@@ -1,2 +1,2 @@
-pub mod markers_plugin;
-pub use markers_plugin::*;
+pub mod markers;
+pub use markers::*;

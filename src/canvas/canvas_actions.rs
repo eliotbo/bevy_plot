@@ -194,7 +194,7 @@ pub fn spawn_graph(
     // asset_server: Res<AssetServer>,
     mut update_labels_event: EventWriter<UpdatePlotLabelsEvent>,
     // mut spawn_markers_event: EventWriter<SpawnMarkersEvent>,
-    mut spawn_beziercurve_event: EventWriter<SpawnBezierCurveEvent>,
+    // mut spawn_beziercurve_event: EventWriter<SpawnBezierCurveEvent>,
     mut change_canvas_material_event: EventWriter<ChangeCanvasMaterialEvent>,
 ) {
     for event in spawn_graph_event.iter() {
@@ -231,11 +231,11 @@ pub fn spawn_graph(
             plot_handle: plot_handle.clone(),
         });
 
-        // TODO after tests: remove this
-        spawn_beziercurve_event.send(SpawnBezierCurveEvent {
-            canvas_handle: canvas_material_handle,
-            plot_handle,
-        });
+        // // TODO after tests: remove this
+        // spawn_beziercurve_event.send(SpawnBezierCurveEvent {
+        //     canvas_handle: canvas_material_handle,
+        //     plot_handle,
+        // });
     }
 }
 
@@ -250,14 +250,14 @@ pub fn update_mouse_target(
     cursor: Res<Cursor>,
     mouse_button_input: Res<Input<MouseButton>>,
 ) {
-    if mouse_button_input.just_pressed(MouseButton::Left) {
+    if mouse_button_input.just_pressed(MouseButton::Middle) {
         for (canvas_material_handle, plot_handle) in graph_sprite_query.iter() {
             // println!("{:?}", "CHANGING SHADER");
             // if let Some(plot) = my_canvas_mat.get_mut(plot_handle) {
             if let Some(plot) = my_plots.get_mut(plot_handle) {
                 plot.compute_zeros();
                 if let Some(canvas_material) = my_canvas_mats.get_mut(canvas_material_handle) {
-                    // plot.compute_zeros();
+                    plot.compute_zeros();
 
                     // let mouse_world = cursor.position - 0.0 * plot.position - 0.0 * plot.zero_world;
 
@@ -265,7 +265,10 @@ pub fn update_mouse_target(
 
                     // let mouse_plot = mouse_world * (1.0 + plot.outer_border.y) * ranges / plot.size;
 
-                    canvas_material.mouse_pos = cursor.position;
+                    let mouse_plot = plot.world_to_plot(cursor.position);
+                    canvas_material.mouse_pos = mouse_plot;
+
+                    // canvas_material.mouse_pos = cursor.position;
                 }
             }
         }
@@ -301,38 +304,13 @@ pub fn change_plot(
         // println!("{:?}", "CHANGING SHADER");
         // if let Some(plot) = my_canvas_mat.get_mut(plot_handle) {
         if let Some(plot) = my_plots.get_mut(plot_handle) {
-            // if plot.vars[0]
-
-            // plot.relative_mouse_pos converts screen position to local quad position
-
-            let x_range = plot.bounds.up.x - plot.bounds.lo.x;
-            let y_range = plot.bounds.up.y - plot.bounds.lo.y;
-
-            plot.relative_mouse_pos = cursor.position - plot.position;
-            plot.relative_mouse_pos.y /= plot.size.y;
-            plot.relative_mouse_pos.y *= (1.0 + plot.outer_border.y) * y_range;
-
-            plot.relative_mouse_pos.x /= plot.size.x;
-            plot.relative_mouse_pos.x *= (1.0 + plot.outer_border.x) * x_range;
-
-            let current_zero_pos = Vec2::new(
-                x_range / 2.0 + plot.bounds.lo.x,
-                y_range / 2.0 + plot.bounds.lo.y,
-            );
-
-            // if let Some(canvas_material) = my_canvas_mats.get_mut(canvas_material_handle) {
-            //     canvas_material.relative_mouse_pos = plot.relative_mouse_pos - plot.zero_world;
-            //     //Vec2::new(-x_range / 2.0, -y_range / 2.0);
-            // }
+            plot.relative_mouse_pos = plot.world_to_plot(cursor.position);
 
             graph_sprite.hovered_on_plot_edges(cursor.position, &mut windows);
-            // let max_num_ticks = 15.0;
 
             for event in mouse_motion_events.iter() {
                 if keyboard_input.pressed(KeyCode::Q) {
                     plot.globals.dum1 += (event.delta.x + event.delta.y) / 100.0;
-                    // plot.tick_period.x *= (1.0 + (event.delta.x) / 1000.0 * plot.delta_axes().x);
-                    // plot.tick_period.y *= (1.0 + (event.delta.y) / 1000.0 * plot.delta_axes().y);
                     plot.tick_period.x *= 1.0 + (event.delta.x) / 1000.0;
                     plot.tick_period.y *= 1.0 + (event.delta.y) / 1000.0;
 

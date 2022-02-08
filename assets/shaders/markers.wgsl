@@ -178,11 +178,14 @@ struct MarkerUniform {
     marker_size: f32;
     hole_size: f32;
     zoom: f32;
-    point_type: u32;
+    point_type: i32;
     quad_size: f32;
+    contour: f32;
     inner_canvas_size_in_pixels: float2;
     canvas_position_in_pixels: float2;
     color: float4;
+    marker_point_color: float4;
+    
 };
 
 [[group(2), binding(0)]]
@@ -191,14 +194,14 @@ var<uniform> uni: MarkerUniform;
 
 [[stage(fragment)]]
 fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
-    // let width = 0.003 ;
+ 
     let width = 0.041 ;
     let zoom = uni.zoom;
-    //  let zoom = 1.0;
-    var w = width * zoom  ;
-    var solid = width * zoom * 1.0 ;
 
-    // var out_col = float4(0.5, 0.5, 0.0, 1.0);
+    var w = width * zoom  ;
+    var solid = width * zoom  ;
+
+
     var out_col = uni.color;
 
     var uv = in.uv - float2(0.5,0.5);
@@ -208,7 +211,7 @@ fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
     let marker_size = uni.marker_size;
 
     let point_type = i32(uni.point_type);
-    // let point_type = 8;
+    // let point_type = 6;
 
     // change the aliasing as a function of the zoom
     var circ_zoom = zoom;
@@ -231,7 +234,7 @@ fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
     // x -> 7
     // circle -> 8
 
-
+    let black = float4(0.0, 0.0, 0.0, 1.0);
     // square -> 0
     if (point_type == 0) {
 
@@ -241,19 +244,22 @@ fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
       let d = sdRoundedBox(uv, float2(side_size, side_size), float4(r, r, r, r));  
       let s = smoothStep(solid*0.0 , solid * 0.0 + w , d    );
 
-      out_col.a = out_col.a * (1.0 - s);
+      out_col = out_col * (1.0 - s);
 
 
     // heart -> 1
     } else if (point_type == 1) {
+        uv.y = -uv.y;
 
         let heart_size = cla(0.2, 0.6, 0.15 * uni.marker_size); 
         let w_heart = w / heart_size;
 
         let d = sdHeart((uv - float2(0.0, -heart_size * 0.9 + 0.15)) / heart_size + float2(0.0, 0.2));  
+       
         let s = smoothStep(0.0 , w_heart , d    );
 
-        out_col.a = out_col.a * (1.0 - s);
+        out_col = out_col * (1.0 - s);
+
 
     // rhombus -> 2
     } else if (point_type == 2) {
@@ -263,7 +269,15 @@ fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
         let d = sdRhombus(uv, float2(size * 1.2, size * 0.8));
         let s = smoothStep(0.0  , w / circ_zoom, d   );
 
-        out_col.a = out_col.a *(1.0 - s);
+        out_col = out_col *(1.0 - s);
+
+        if (uni.contour > 0.5) {
+            let d = sdRhombus(uv, float2(size * 1.2, size * 0.8) * 1.2);
+            let s = smoothStep(0.0  , w / circ_zoom, abs(d) - 0.02   );
+            
+            out_col = mix(black, out_col, s);
+        }
+
 
     // triangle -> 3
     } else if (point_type == 3) {
@@ -275,7 +289,14 @@ fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
         let d = sdTriangleIsosceles(uv - float2(0.0, -size * 0.5) , float2(size * 0.7, size));
         let s = smoothStep(0.0  , 0.0  + w / circ_zoom, d   );
 
-        out_col.a = out_col.a * (1.0 - s);
+        out_col = out_col * (1.0 - s);
+
+        if (uni.contour > 0.5) {
+            let d = sdTriangleIsosceles(uv - float2(0.0, -size * 0.5) , float2(size * 0.7, size));
+            let s = smoothStep(0.0  , 0.0  + w / circ_zoom, abs(d) - 0.02   );
+
+            out_col = mix(black, out_col, s);
+        }
     
     // star -> 4
     } else if (point_type == 4) {
@@ -285,11 +306,15 @@ fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
         let d = sdStar(uv, star_size, u32(5), 0.35);
         let s = smoothStep(0.0  , 0.0  + w / circ_zoom, d   );
 
-        out_col.a = out_col.a * (1.0 - s);
+        out_col = out_col * (1.0 - s);
 
-        let sb = smoothStep(1.0  , 0.0  + w / circ_zoom, d   );
+        // let sb = smoothStep(1.0  , 0.0  + w / circ_zoom, d   );
 
-
+        if (uni.contour > 0.5) {
+            let d = sdStar(uv, star_size, u32(5), 0.35);
+            let s = smoothStep(0.0  , 0.0  + w / circ_zoom, abs(d)- 0.02   );
+            out_col = mix(black, out_col, s);
+        }
 
     // moon -> 5
     } else if (point_type == 5) {
@@ -299,7 +324,13 @@ fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
         let d = sdMoon(uv - float2(0.05 * (1.0 + moon_size * 0.7 ), 0.0), 0.3 * moon_size, 0.35 * moon_size, 0.35 * moon_size);
         let s = smoothStep(0.0  , 0.0  + w / circ_zoom, d   );
        
-        out_col.a = out_col.a *  (1.0 - s);
+        out_col = out_col *  (1.0 - s);
+
+        if (uni.contour > 0.5) {
+            let d = sdMoon(uv - float2(0.05 * (1.0 + moon_size * 0.7 ), 0.0), 0.3 * moon_size, 0.35 * moon_size, 0.35 * moon_size);
+            let s = smoothStep(0.0  , 0.0  + w / circ_zoom, abs(d) - 0.02   );
+            out_col = mix(black, out_col, s);
+        }
 
     // cross -> 6
     } else if (point_type == 6) {
@@ -310,7 +341,13 @@ fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
         let s = smoothStep(0.0  , 0.0  + w / circ_zoom, d   );
 
 
-        out_col.a = out_col.a * (1.0 - s);
+        out_col = out_col * (1.0 - s);
+
+      if (uni.contour > 0.5) {
+          let d = sdCross(uv, float2(cross_size, cross_size / 3.0));
+          let s = smoothStep(0.0  , 0.0  + w / circ_zoom, abs(d) - 0.02   );
+          out_col = mix(black, out_col, s);
+      }
         
 
     // x -> 7
@@ -321,7 +358,13 @@ fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
         let d = sdRoundedX(uv, ex_size, ex_size / 6.0);
         let s = smoothStep(0.0  ,  w / circ_zoom, d   );
 
-        out_col.a = out_col.a * (1.0 - s);
+        out_col = out_col * (1.0 - s);
+
+        if (uni.contour > 0.5) {
+            let d = sdRoundedX(uv, ex_size, ex_size / 6.0);
+            let s = smoothStep(0.0  ,  w / circ_zoom, abs(d) - 0.02);
+            out_col = mix(black, out_col, s);
+        }
 
     // circles -> 8
     } else if (point_type == 8) {
@@ -332,13 +375,20 @@ fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
       let d = sdCircle(uv, float2(0.0,0.0), circle_size);  
       let s = smoothStep(0.0 ,  w , d    );
 
-      out_col.a = out_col.a * (1.0 - s) ;
+      out_col = out_col * (1.0 - s) ;
+
+      if (uni.contour > 0.5) {
+          let d = sdCircle(uv, float2(0.0,0.0), circle_size);  
+          let s = smoothStep(0.0 ,  w , abs(d) - 0.02    );
+          out_col = mix(black, out_col, s);
+      }
     }
 
     // tiny circle at exact location of data point
+    let inner_circle_color = uni.marker_point_color;
     let dc = sdCircle(uv  , float2(0.0, 0.0 ), 0.025 * uni.hole_size );
     let sc = smoothStep(0.0, w / circ_zoom * uni.hole_size , dc  );
-    out_col = mix(out_col, float4(0.0,0.3,0.3,1.0) , 1.0 - sc) ;
+    out_col = mix(out_col, inner_circle_color , 1.0 - sc) ;
 
     // mask with the canvas
     let r = 0.02 * uni.inner_canvas_size_in_pixels.x;

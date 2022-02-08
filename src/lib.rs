@@ -14,3 +14,6 @@ pub use bezier::*;
 
 mod plot;
 pub use plot::*;
+
+mod segments;
+// pub use segments;

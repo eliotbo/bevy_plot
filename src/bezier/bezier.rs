@@ -76,10 +76,10 @@ impl Line {
 //     }
 // }
 
-pub struct SpawnBezierCurveEvent {
-    pub canvas_handle: Handle<CanvasMaterial>,
-    pub plot_handle: Handle<Plot>,
-}
+// pub struct SpawnBezierCurveEvent {
+//     pub canvas_handle: Handle<CanvasMaterial>,
+//     pub plot_handle: Handle<Plot>,
+// }
 
 // Compute derivatives at each point
 pub fn make_df(xs: &Vec<f32>, f: &fn(f32) -> f32) -> (Vec<Vec2>, Vec<Vec2>) {
@@ -203,10 +203,10 @@ pub fn plot_fn(
 
     plot.compute_zeros();
     // for func in plot.smooth_functions.iter() {
-    for bezier_plot in plot.data.bezier_plots.iter() {
+    for bezier_plot in plot.data.bezier_groups.iter() {
         // println!("Bezier");
         let func = bezier_plot.function.clone();
-        let color = bezier_plot.color;
+        // let color = bezier_plot.color;
 
         let num_pts = plot.bezier_num_points;
 
@@ -220,7 +220,7 @@ pub fn plot_fn(
             .map(|x| Vec2::new(*x, func(*x)))
             .collect::<Vec<Vec2>>();
 
-        let ys_world = plot.plot_to_world(&ys);
+        let ys_world = ys.iter().map(|y| plot.to_world(*y)).collect::<Vec<Vec2>>();
 
         let (dys, _) = make_df(&xs, &func);
 
@@ -230,7 +230,11 @@ pub fn plot_fn(
             .map(|(dy, y)| *dy + *y)
             .collect::<Vec<Vec2>>();
 
-        let dys_p_ys_world = plot.plot_to_world(&dys_p_ys);
+        // let dys_p_ys_world = plot.plot_to_world(&dys_p_ys);
+        let dys_p_ys_world = dys_p_ys
+            .iter()
+            .map(|y| plot.to_world(*y))
+            .collect::<Vec<Vec2>>();
 
         let mut ends = Vec::new();
 
@@ -245,9 +249,9 @@ pub fn plot_fn(
 
         let bounds_world = plot.compute_bounds_world();
 
-        // TODO
         let line_width = 30.0;
         for k in 0..num_pts - 1 {
+            // TODO: Figure out what quadt-offset does
             let quadt_offset = line_width * 10.0;
 
             mesh0.push(Vec2::new(ys_world[k].x - quadt_offset, bounds_world.up.y));
@@ -403,7 +407,9 @@ pub fn plot_fn(
                 zoom: 1.0,
                 inner_canvas_size_in_pixels: plot.size / (1.0 + plot.outer_border),
                 canvas_position_in_pixels: plot.position,
-                color: col_to_vec4(color),
+                color: col_to_vec4(bezier_plot.color),
+                size: bezier_plot.size,
+                style: bezier_plot.line_style.clone().to_int32(),
             });
     }
 }
@@ -420,6 +426,8 @@ pub struct BezierCurveUniform {
     pub inner_canvas_size_in_pixels: Vec2,
     pub canvas_position_in_pixels: Vec2,
     pub color: Vec4,
+    pub size: f32,
+    pub style: i32,
 }
 
 pub struct BezierMesh2dPipeline {
