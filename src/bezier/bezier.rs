@@ -145,11 +145,11 @@ pub fn change_bezier_uni(
         if mouse_button_input.pressed(MouseButton::Left) {
             custom_uni.left = mouse_pos.x / 100.0;
             // println!("left: {}, right: {}", custom_uni.left, custom_uni.mech);
+            println!("BEZ left: {}", custom_uni.left,);
         } else if mouse_button_input.pressed(MouseButton::Right) {
             custom_uni.mech = mouse_pos.x / 100.0;
             // custom_uni.ya.x = mouse_pos.x / 100.0;
             // custom_uni.ya.y = mouse_pos.y / 100.0;
-            println!("left: {}, right: {}", custom_uni.left, custom_uni.mech);
         }
     }
 }

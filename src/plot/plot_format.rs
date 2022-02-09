@@ -10,8 +10,6 @@ pub enum PlotType {
 #[derive(Debug, Clone)]
 pub struct PlotFormat {
     pub data: Vec<Vec2>,
-    pub ptype: PlotType,
-    pub maybe_func: Option<fn(f32) -> f32>,
 }
 
 // where
@@ -23,11 +21,7 @@ pub trait Plotable {
 
 impl Plotable for Vec<Vec2> {
     fn into_plot_format(&self) -> PlotFormat {
-        PlotFormat {
-            data: self.clone(),
-            ptype: PlotType::Segment,
-            maybe_func: None,
-        }
+        PlotFormat { data: self.clone() }
     }
 }
 
@@ -38,8 +32,6 @@ impl Plotable for Vec<(f64, f64)> {
                 .iter()
                 .map(|(x, y)| Vec2::new(*x as f32, *y as f32))
                 .collect(),
-            ptype: PlotType::Segment,
-            maybe_func: None,
         }
     }
 }
@@ -51,8 +43,6 @@ impl Plotable for Vec<(i32, i32)> {
                 .iter()
                 .map(|(x, y)| Vec2::new(*x as f32, *y as f32))
                 .collect(),
-            ptype: PlotType::Segment,
-            maybe_func: None,
         }
     }
 }
@@ -64,8 +54,6 @@ impl Plotable for Vec<(i64, i64)> {
                 .iter()
                 .map(|(x, y)| Vec2::new(*x as f32, *y as f32))
                 .collect(),
-            ptype: PlotType::Segment,
-            maybe_func: None,
         }
     }
 }
@@ -77,8 +65,6 @@ impl Plotable for Vec<(i16, i16)> {
                 .iter()
                 .map(|(x, y)| Vec2::new(*x as f32, *y as f32))
                 .collect(),
-            ptype: PlotType::Segment,
-            maybe_func: None,
         }
     }
 }
@@ -90,8 +76,6 @@ impl Plotable for Vec<(i8, i8)> {
                 .iter()
                 .map(|(x, y)| Vec2::new(*x as f32, *y as f32))
                 .collect(),
-            ptype: PlotType::Segment,
-            maybe_func: None,
         }
     }
 }
@@ -103,8 +87,6 @@ impl Plotable for Vec<(u8, u8)> {
                 .iter()
                 .map(|(x, y)| Vec2::new(*x as f32, *y as f32))
                 .collect(),
-            ptype: PlotType::Segment,
-            maybe_func: None,
         }
     }
 }
@@ -116,8 +98,6 @@ impl Plotable for Vec<(u16, u16)> {
                 .iter()
                 .map(|(x, y)| Vec2::new(*x as f32, *y as f32))
                 .collect(),
-            ptype: PlotType::Segment,
-            maybe_func: None,
         }
     }
 }
@@ -129,8 +109,6 @@ impl Plotable for Vec<(u32, u32)> {
                 .iter()
                 .map(|(x, y)| Vec2::new(*x as f32, *y as f32))
                 .collect(),
-            ptype: PlotType::Segment,
-            maybe_func: None,
         }
     }
 }
@@ -142,8 +120,6 @@ impl Plotable for Vec<(u64, u64)> {
                 .iter()
                 .map(|(x, y)| Vec2::new(*x as f32, *y as f32))
                 .collect(),
-            ptype: PlotType::Segment,
-            maybe_func: None,
         }
     }
 }
@@ -155,8 +131,6 @@ impl Plotable for Vec<(usize, usize)> {
                 .iter()
                 .map(|(x, y)| Vec2::new(*x as f32, *y as f32))
                 .collect(),
-            ptype: PlotType::Segment,
-            maybe_func: None,
         }
     }
 }
@@ -169,8 +143,6 @@ impl Plotable for Vec<f32> {
                 .enumerate()
                 .map(|(i, x)| Vec2::new(i as f32, *x))
                 .collect(),
-            ptype: PlotType::Segment,
-            maybe_func: None,
         }
     }
 }
@@ -183,8 +155,6 @@ impl Plotable for Vec<f64> {
                 .enumerate()
                 .map(|(i, x)| Vec2::new(i as f32, *x as f32))
                 .collect(),
-            ptype: PlotType::Segment,
-            maybe_func: None,
         }
     }
 }
@@ -236,7 +206,7 @@ impl Plotable for Vec<f64> {
 //     fn into_plot_format(&self) -> PlotFormat {
 //         PlotFormat {
 //             data: self.0.iter().map(|x| Vec2::new(*x, self.1(*x))).collect(),
-//             ptype: PlotType::Segment, maybe_func: None,
+//
 //         }
 //     }
 // }
@@ -249,7 +219,7 @@ impl Plotable for Vec<f64> {
 //                 .iter()
 //                 .map(|x| Vec2::new(*x as f32, self.1(*x as f32)))
 //                 .collect(),
-//             ptype: PlotType::Segment, maybe_func: None,
+//
 //         }
 //     }
 // }
@@ -262,7 +232,7 @@ impl Plotable for Vec<f64> {
 //                 .iter()
 //                 .map(|x| Vec2::new(*x, self.1(*x as f64) as f32))
 //                 .collect(),
-//             ptype: PlotType::Segment, maybe_func: None,
+//
 //         }
 //     }
 // }
@@ -275,7 +245,7 @@ impl Plotable for Vec<f64> {
 //                 .iter()
 //                 .map(|x| Vec2::new(*x as f32, self.1(*x) as f32))
 //                 .collect(),
-//             ptype: PlotType::Segment, maybe_func: None,
+//
 //         }
 //     }
 // }
@@ -289,7 +259,7 @@ impl Plotable for Vec<f64> {
 //                 .iter()
 //                 .map(|x| Vec2::new(*x as f32, self.1(*x as u32) as f32))
 //                 .collect(),
-//             ptype: PlotType::Segment, maybe_func: None,
+//
 //         }
 //     }
 // }

@@ -104,6 +104,7 @@ pub struct BezierData {
     pub draw_contour: bool,
     pub color: Color,
     pub mech: bool,
+    pub num_points: usize,
 }
 
 impl Default for BezierData {
@@ -116,6 +117,7 @@ impl Default for BezierData {
             line_style: LineStyle::Solid,
             draw_contour: false,
             mech: false,
+            num_points: 256,
         }
     }
 }
@@ -145,7 +147,7 @@ impl Default for MarkerData {
             marker_point_color: Color::rgb(0.2, 0.3, 0.8),
             marker_style: MarkerStyle::Circle,
             size: 1.0,
-            draw_contour: true,
+            draw_contour: false,
         }
     }
 }
@@ -193,7 +195,7 @@ impl Default for PlotData {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum MarkerStyle {
     None,
     Circle,
@@ -216,7 +218,6 @@ impl MarkerStyle {
             MarkerStyle::Triangle => 3,
             MarkerStyle::Rhombus => 2,
             MarkerStyle::Star => 4,
-            
             MarkerStyle::Moon => 5,
             MarkerStyle::Cross => 6,
             MarkerStyle::X => 7,
@@ -226,12 +227,12 @@ impl MarkerStyle {
 }
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum LineStyle{
     None,
     Solid,
 
-    /// the following are not implemented yet
+    /// unimplemented
     Dashed,
     Dotted,
     DashDot,
@@ -251,22 +252,25 @@ impl LineStyle {
     }
 }
 
-#[derive(Debug, Clone)]
+/// Options for customizing the appearance of the plot.
+#[derive(Debug, Clone, PartialEq)]
 // Options as the second argument the of plotop method
 pub enum Opt {
+    /// Shared between plotopt_analytical() and plotopt()
     Color(Color),
     Size(f32),
-    Contour(bool),
-
-    // Bezier curve and segments only
     LineStyle(LineStyle),
     Mech(bool),
-
     
+    /// Works with plotopt_analytical() only.
+    NumPoints(usize),
 
-    // markers only
+    /// Use with plotopt() exclusively.
+    MarkerColor(Color),
+    MarkerSize(f32),
     MarkerStyle(MarkerStyle),
     MarkerInnerPointColor(Color),
+    Contour(bool),
     
 }
 
@@ -355,120 +359,105 @@ impl Default for Plot {
 
 
 impl Plot {
+    /// Customizable plotting function.
     pub fn plotopt<T: Plotable>(&mut self, v: T, options: Vec<Opt>) {
         //
-        let pf: PlotFormat = v.into_plot_format();
-        let mut plot_type = pf.ptype;
+        let data_in_plot_format: PlotFormat = v.into_plot_format();
 
-        // coerce plot type if specified in plot options
-        if let Some(ptype) = self.options.plot_type.clone() {
-            plot_type = ptype;
+        if !options.contains(&Opt::LineStyle(LineStyle::None)) {
+            let mut data = SegmentData {
+                data: data_in_plot_format.data.clone(),
+                ..Default::default() 
+            };
+
+            for option in options.iter() {
+                match option {
+                    Opt::Color(col) => { data.color = *col; },
+
+                    Opt::Size(si)=> {
+                        data.size = *si;
+                    },
+                    Opt::LineStyle(style)=> { data.line_style = style.clone(); },
+
+                    Opt::Mech(mech)=> { data.mech = *mech; },
+
+                    _ => {},
+
+                }
+            }
+                
+            self.data.segment_groups.push(data);
+            self.send_plot_event.segments = true;
         }
 
-        match plot_type {
-            PlotType::Marker => {
-                let mut data = MarkerData {
-                    data: pf.data,
-                    ..Default::default() 
-                };
+        // Decide whether to draw markers using the options.
+        // If any of MarkerStyle or MarkerSize is specified, draw markers
+        let draw_markers = options.iter().map(|opt| {
+            if let &Opt::MarkerStyle(_) = opt  { true } 
+            else if let &Opt::MarkerSize(_) = opt  { true } 
+            else { false }
+        }).any(|x| x);
 
-                for option in options.iter() {
-                    match option {
-                        Opt::Color(col) => { data.color = *col; },
+        if draw_markers {
+            let mut data = MarkerData {
+                data: data_in_plot_format.data.clone(),
+                ..Default::default() 
+            };
 
-                        Opt::Size(si)=> {
-                            data.size = *si;
-                        },
-                        Opt::MarkerStyle(style)=> { data.marker_style = style.clone(); },
-                        Opt::MarkerInnerPointColor(col)=> { data.marker_point_color = col.clone();},
-                        Opt::LineStyle(_)=> {  eprintln!("LineStyle is not a valid option for markers"); },
-                        Opt::Mech(_)=> { eprintln!("Mech is not a valid option for markers");  },
-                        Opt::Contour(cont)=> { data.draw_contour = *cont; },
-                    }
+            for option in options.iter() {
+                match option {
+                    Opt::MarkerColor(col) => { data.color = *col; },
+
+                    Opt::MarkerSize(si)=> {
+                        data.size = *si;
+                    },
+                    Opt::MarkerStyle(style)=> { data.marker_style = style.clone(); },
+                    Opt::MarkerInnerPointColor(col) => { data.marker_point_color = col.clone();},
+                    Opt::Contour(cont)=> { data.draw_contour = *cont; },
+                    _ => {},
+
                 }
-                
-                self.data.marker_groups.push(data);
-                self.send_plot_event.markers = true;
             }
-            PlotType::Segment => {
-                let mut data = SegmentData {
-                    data: pf.data,
-                    ..Default::default() 
-                };
-
-                for option in options.iter() {
-                    match option {
-                        Opt::Color(col) => { data.color = *col; },
-
-                        Opt::Size(si)=> {
-                            data.size = *si;
-                        },
-                        Opt::LineStyle(style)=> { data.line_style = style.clone(); },
-
-                        Opt::Contour(cont)=> { data.draw_contour = *cont;  },
-
-                        Opt::Mech(mech)=> { data.mech = *mech; },
-
-                        Opt::MarkerStyle(_)=> { 
-                            eprintln!("MarkerStyle is not a valid option for segments"); 
-                            },
-                        Opt::MarkerInnerPointColor(_)=> {  
-                            eprintln!("MarkerInnerPointColor is not a valid option for segments"); 
-                            },
-                        
-                        
-                        
-                    }
-                }
-                
-                self.data.segment_groups.push(data);
-                self.send_plot_event.segments = true;
-
-            }
-            _ => { println!("argument cannot be parsed") }
-
+            
+            self.data.marker_groups.push(data);
+            self.send_plot_event.markers = true;
         }
     } 
 
+    /// Quickly plot data points using segments to connect consecutive points. 
     pub fn plot<T: Plotable>(&mut self, v: T) {
         //
-
         let pf: PlotFormat = v.into_plot_format();
-        let mut plot_type = pf.ptype;
 
-        // coerce plot type if specified in plot options
-        if let Some(ptype) = self.options.plot_type.clone() {
-            plot_type = ptype;
-        }
+        let new_data = SegmentData {
+            data: pf.data,
+            ..Default::default()  
+        };
+        
+        self.data.segment_groups.push(new_data);
+        self.send_plot_event.segments = true;
 
-        match plot_type {
-            PlotType::Marker => {
-                let new_data = MarkerData {
-                    data: pf.data,
-                    ..Default::default()                   
-                };
-                
-                self.data.marker_groups.push(new_data);
-                self.send_plot_event.markers = true;
-            }
-            PlotType::Segment => {
-                let new_data = SegmentData {
-                    data: pf.data,
-                    ..Default::default()  
-                };
-                
-                self.data.segment_groups.push(new_data);
-                self.send_plot_event.segments = true;
-
-            }
-            _ => { println!("argument cannot be parsed") }
-
-        }
-
+        
     }
 
+    /// Quickly plot data points using markers (scatter plot). 
+    pub fn plotm<T: Plotable>(&mut self, v: T) {
+        //
+        let pf: PlotFormat = v.into_plot_format();
+
+        let new_data = MarkerData {
+            data: pf.data,
+            ..Default::default()                   
+        };
+        
+        self.data.marker_groups.push(new_data);
+        self.send_plot_event.markers = true;
+        
+    }
+
+    /// Plot a function by providing said function.
     pub fn plot_analytical(&mut self, f: fn(f32) -> f32) {
-        // self.smooth_functions.push(f);
+        //
         let new_data = BezierData {
             function: f,
             ..Default::default()
@@ -479,8 +468,9 @@ impl Plot {
 
     }
 
+    /// Plot a function by providing said function and options.
     pub fn plotopt_analytical(&mut self, f: fn(f32) -> f32, options: Vec<Opt>) {
-        // self.smooth_functions.push(f);
+        //
         let mut data = BezierData {
             function: f,
             ..Default::default()
@@ -496,16 +486,33 @@ impl Plot {
                 },
                 Opt::LineStyle(style)=> { data.line_style = style.clone(); },
 
-                Opt::Contour(cont)=> { data.draw_contour = *cont;  },
-
                 Opt::Mech(mech)=> { data.mech = *mech; },
 
                 Opt::MarkerStyle(_)=> { 
                     eprintln!("MarkerStyle is not a valid option for segments"); 
-                    },
+                },
+
                 Opt::MarkerInnerPointColor(_)=> {  
                     eprintln!("MarkerInnerPointColor is not a valid option for segments"); 
-                    },
+                },
+
+                Opt::Contour(_)=> { 
+                     println!("Contour is not a valid option for segments");
+                },
+                
+                Opt::NumPoints(_) => { 
+                    eprintln!("NumPoints is not a valid option for segments"); 
+                },
+
+                Opt::MarkerColor(_) => { 
+                    eprintln!("MarkerColor is not a valid option for segments"); 
+                },
+
+                Opt::MarkerSize(_) => { 
+                    eprintln!("MarkerSize is not a valid option for segments"); 
+                },
+
+                _ => {},
 
                 
             }

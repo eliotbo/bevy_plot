@@ -120,7 +120,6 @@ fn setup(
         vec![
             Opt::Size(0.75),
             Opt::Color(colors.get(&PlotColor::Gray).unwrap()[2]),
-            Opt::Contour(true),
             Opt::Mech(true),
         ],
     );
@@ -135,8 +134,10 @@ fn setup(
         vec![
             Opt::Size(0.75),
             Opt::Color(colors.get(&PlotColor::Green).unwrap()[1]),
-            Opt::Contour(true),
-            Opt::Mech(true),
+            Opt::Mech(false),
+            Opt::MarkerStyle(MarkerStyle::Circle),
+            Opt::MarkerSize(0.5),
+            Opt::MarkerColor(colors.get(&PlotColor::Green).unwrap()[4]),
         ],
     );
 
@@ -146,9 +147,18 @@ fn setup(
     let quad_style = Opt::LineStyle(LineStyle::Solid);
     // let quad_color = Opt::Color(Color::rgb(0.1, 0.5, 0.0));
     let quad_color = Opt::Color(colors.get(&PlotColor::Orange).unwrap()[5]);
-    let quad_size = Opt::Size(2.0);
+    let quad_size = Opt::Size(0.5);
     let quad_options = vec![quad_style, quad_color, quad_size];
     plot.plotopt_analytical(|x: f32| x * x, quad_options);
+
+    plot.plotopt_analytical(
+        |x: f32| x * x + 1.5,
+        vec![
+            Opt::Size(2.0),
+            Opt::Color(colors.get(&PlotColor::LightPink).unwrap()[1]),
+            Opt::Mech(true),
+        ],
+    );
 
     let plot_handle = plots.add(plot.clone());
 

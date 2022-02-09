@@ -65,7 +65,7 @@ pub fn change_segment_uni(
             // segment_uni.ya.x = mouse_pos.x / 100.0;
             // segment_uni.ya.y = mouse_pos.y / 100.0;
             println!(
-                "left: {}, right: {}",
+                "Seg Size: {}, Seg Hole: {}",
                 segment_uni.segment_size, segment_uni.hole_size
             );
         }

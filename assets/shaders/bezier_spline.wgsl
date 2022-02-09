@@ -197,7 +197,7 @@ fn tips(uv: float2, m_in: float4, dy: float2, solid: f32, w: f32 ) -> float4 {
 
 [[stage(fragment)]]
 fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
-     let width = bez_uni.size / 1.0;
+    let width = bez_uni.size / 1.0;
     let w = 1.0 + width * bez_uni.zoom  * 1.0;
     let solid = width * bez_uni.zoom ;
 
@@ -228,7 +228,7 @@ fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
 
     // mechanical look
     if (bez_uni.mech > 0.5) {
-    // if (true) {
+    // if (false) {
         let c0 = sdCircle(in.uv, p0, w);
         let sc0 = smoothStep(0.0 + solid, w + solid , c0);
 
@@ -245,12 +245,22 @@ fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
         out_col.a = out_col.a * (1.0 -s );
 
         // correcting for artifacts at the intersection of two bezier end-points
-        // by displacing a circle in the direction of the derivative
+        // by displacing a circle in the direction of the derivative.
+        // Thw artifact variable was chosen experimentally for sizes of 0.5, 1.0 and 2.0;
 
         if (is_last < 0.5) { 
-            let dy1 = normalize(p1 - control);
-            // let dc = sdCircle(in.uv, p1 + dy * 3.3 * width / 2.0 * bez_uni.mech , w);
-            // let sc = smoothStep(solid, w*0.9 * bez_uni.left + solid , dc);
+            var artifact = 1.0;
+            if (bez_uni.size > 1.9) {
+                artifact = 0.78;
+            }
+            if (bez_uni.size < 0.6) {
+                artifact = 1.75;
+            }
+            let dy = normalize(p1 - control);
+            let dc = sdCircle(in.uv, p1 + dy *  width * 2.12 * artifact , w);
+            // let dc = sdCircle(in.uv, p1 + dy *  width * bez_uni.left * 2.12 * artifact , w);
+
+           let sc = smoothStep(solid, w * 0.9 *0.5 + solid , dc);
            
             // let dy = normalize(p1 - control);
 
@@ -258,7 +268,8 @@ fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
             // let sc = smoothStep(solid, solid + w * 1.0 , dc);
 
 
-            // out_col.a = out_col.a  - ( 1.0 - sc ) ;
+            out_col.a = out_col.a  - ( 1.0 - sc ) ;
+            
             let div = 5.0;
             let dy1 = normalize(p1 - control);
             let dy0 = normalize(p0 - control);
