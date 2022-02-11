@@ -2,7 +2,7 @@ mod canvas;
 // use canvas::*;
 
 mod markers;
-// use markers::SpawnMarkersEvent;
+pub use markers::*;
 
 pub mod inputs;
 pub use inputs::*;
@@ -16,4 +16,4 @@ mod plot;
 pub use plot::*;
 
 mod segments;
-// pub use segments;
+pub use segments::*;

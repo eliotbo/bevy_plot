@@ -7,8 +7,6 @@ pub struct ReleaseAllEvent;
 #[derive(Component)]
 pub struct Locked;
 
-pub type KnobId = u32;
-
 #[derive(Debug, Copy, Clone, AsStd140)]
 pub struct LineParams {
     pub thickness: f32,

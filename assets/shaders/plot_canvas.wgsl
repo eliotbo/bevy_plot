@@ -55,7 +55,9 @@ struct GraphEditShader {
     size: float2;
     outer_border: float2;
     position: vec2<f32>;
-
+    show_target: f32;
+    target_pos: float2;
+// 
     // vars: array<Interval, 16>;
     // lines_params: array<LineParams, 8> ;
     // data: array<array<float4, 256>, 8>;
@@ -383,20 +385,22 @@ fn fragment(in: VertexOutput) -> [[location(0)]] vec4<f32> {
     // /////////////////// mouse target /////////////////////////
 
     /////////////////// mouse target /////////////////////////
-    // rect = draw_circle(rect, uv, rad*2. , black, ann, mate.mouse_pos);
-    let gray = vec4<f32>(1.0, 1.0, 1.0, 1.0) * 0.5;
-    let aspect_ratio = mate.size.y / mate.size.x;
-    // let aspect_ratio = 1.0;
-    let target_thickness = 0.005 * mate.globals.zoom;
-    let pos_edges = edges ;
+    if (mate.show_target > 0.5) {
+        // rect = draw_circle(rect, uv, rad*2. , black, ann, mate.mouse_pos);
+        let gray = vec4<f32>(1.0, 1.0, 1.0, 1.0) * 0.5;
+        let aspect_ratio = mate.size.y / mate.size.x;
+        // let aspect_ratio = 1.0;
+        let target_thickness = 0.25; // mate.globals.zoom;
+        let pos_edges = edges - mate.position;
 
-    segment.start = float2( mate.mouse_pos.x, -pos_edges.y ) ;
-    segment.end = float2(  mate.mouse_pos.x, pos_edges.y ) ;
-    rect = draw_segment(target_thickness * aspect_ratio * 0.85, rect, uv  , segment, gray, bar_alpha) ;
+        segment.start = float2( mate.target_pos.x, -pos_edges.y );
+        segment.end = float2(  mate.target_pos.x, pos_edges.y );
+        rect = draw_segment(target_thickness , rect, in.uv  , segment, gray, bar_alpha) ;
 
-    segment.start = float2(-pos_edges.x,  mate.mouse_pos.y);
-    segment.end = float2( pos_edges.x,  mate.mouse_pos.y);
-    rect = draw_segment(target_thickness , rect, uv  , segment, gray, bar_alpha) ;
+        segment.start = float2(-pos_edges.x,  mate.target_pos.y);
+        segment.end = float2( pos_edges.x,  mate.target_pos.y);
+        rect = draw_segment(target_thickness , rect, in.uv  , segment, gray, bar_alpha) ;
+    }
     /////////////////// mouse target /////////////////////////
 
 

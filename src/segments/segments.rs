@@ -6,11 +6,11 @@ use bevy::{
     prelude::*,
     // reflect::TypeUuid,
     render::{
-        mesh::GpuBufferInfo,
+        // mesh::GpuBufferInfo,
         mesh::Indices,
         render_asset::RenderAssets,
         render_component::{ComponentUniforms, DynamicUniformIndex, UniformComponentPlugin},
-        render_component::{ExtractComponent, ExtractComponentPlugin},
+        // render_component::{ExtractComponent, ExtractComponentPlugin},
         render_phase::{
             AddRenderCommand, DrawFunctions, EntityRenderCommand, RenderCommandResult, RenderPhase,
             SetItemPipeline, TrackedRenderPass,
@@ -30,52 +30,22 @@ use bevy::{
     },
 };
 
-use bytemuck::{Pod, Zeroable};
+// use bytemuck::{Pod, Zeroable};
 // use crate::canvas::*;
-use crate::inputs::*;
+// use crate::inputs::*;
 
 use crate::plot::*;
 
-use crate::canvas::ChangeCanvasMaterialEvent;
+use crate::canvas::UpdateShadersEvent;
 use crate::util::*;
 
 // use flo_curves::*;
 // use itertools_num::linspace;
 
-pub fn change_segment_uni(
-    mut query: Query<&mut SegmentUniform>,
-    mouse_position: Res<Cursor>,
-    mouse_button_input: Res<Input<MouseButton>>,
-) {
-    for mut segment_uni in query.iter_mut() {
-        let mouse_pos = mouse_position.position;
-
-        if mouse_button_input.pressed(MouseButton::Left) {
-            segment_uni.hole_size = mouse_pos.x / 100.0;
-            // println!("left: {}, right: {}", segment_uni.left, segment_uni.mech);
-        } else if mouse_button_input.pressed(MouseButton::Right) {
-            segment_uni.segment_size = (mouse_pos.x / 100.0).clamp(0.2, 3.0);
-
-            if segment_uni.segment_size < 2.0 {
-                segment_uni.mech = 0.0;
-            } else {
-                segment_uni.mech = 1.0;
-            }
-
-            // segment_uni.ya.x = mouse_pos.x / 100.0;
-            // segment_uni.ya.y = mouse_pos.y / 100.0;
-            println!(
-                "Seg Size: {}, Seg Hole: {}",
-                segment_uni.segment_size, segment_uni.hole_size
-            );
-        }
-    }
-}
-
 pub fn segments_setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut change_canvas_material_event: EventReader<ChangeCanvasMaterialEvent>,
+    mut change_canvas_material_event: EventReader<UpdateShadersEvent>,
     mut plots: ResMut<Assets<Plot>>,
     query: Query<(Entity, &Handle<Plot>), With<SegmentUniform>>,
 ) {
@@ -148,13 +118,13 @@ pub fn plot_segments(
     for segment_plot in data.segment_groups.iter() {
         let ys = segment_plot.data.clone();
 
+        // TODO: is this still needed?
         // derivatives and normals
-        let (dfs, ns) = make_df(&ys);
-        // println!("dfs: {:?}", ns);
+        let (_dfs, _ns) = make_df(&ys);
 
         let num_pts = ys.len();
 
-        let ys_world = ys.iter().map(|y| plot.to_world(*y)).collect::<Vec<Vec2>>();
+        let ys_world = ys.iter().map(|y| plot.to_local(*y)).collect::<Vec<Vec2>>();
 
         let quad_size = 30.0;
 
@@ -219,7 +189,7 @@ pub fn plot_segments(
         // let mut normals = Vec::new();
         // TODO: z position is here
         for position in mesh0 {
-            mesh_pos_attributes.push([position.x, position.y, -30.0]);
+            mesh_pos_attributes.push([position.x, position.y, 0.0]);
             // normals.push([0.0, 0.0, 1.0]);
         }
 
@@ -242,7 +212,7 @@ pub fn plot_segments(
                 //     flip: false,
                 // }))),
                 GlobalTransform::default(),
-                Transform::from_translation(Vec3::new(0.0, 0.0, 3.0) + plot.position.extend(0.0)),
+                Transform::from_translation(plot.canvas_position.extend(1.0)),
                 Visibility::default(),
                 ComputedVisibility::default(),
             ))
@@ -256,8 +226,8 @@ pub fn plot_segments(
                 segment_point_color: col_to_vec4(segment_plot.segment_point_color),
                 color: col_to_vec4(segment_plot.color),
                 quad_size,
-                inner_canvas_size_in_pixels: plot.size / (1.0 + plot.outer_border),
-                canvas_position: plot.position,
+                inner_canvas_size_in_pixels: plot.canvas_size / (1.0 + plot.outer_border),
+                canvas_position: plot.canvas_position,
                 contour: if segment_plot.draw_contour { 1.0 } else { 0.0 },
             });
     }

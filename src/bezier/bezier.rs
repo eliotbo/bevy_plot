@@ -27,11 +27,11 @@ use bevy::{
 };
 
 // use crate::canvas::*;
-use crate::inputs::*;
+// use crate::inputs::*;
 
 use crate::plot::*;
 
-use crate::canvas::ChangeCanvasMaterialEvent;
+use crate::canvas::UpdateShadersEvent;
 use crate::util::*;
 
 // use flo_curves::*;
@@ -134,32 +134,12 @@ pub fn make_df(xs: &Vec<f32>, f: &fn(f32) -> f32) -> (Vec<Vec2>, Vec<Vec2>) {
     // return (dfs_vec2, ns_vec2);
 }
 
-pub fn change_bezier_uni(
-    mut query: Query<&mut BezierCurveUniform>,
-    mouse_position: Res<Cursor>,
-    mouse_button_input: Res<Input<MouseButton>>,
-) {
-    for mut custom_uni in query.iter_mut() {
-        let mouse_pos = mouse_position.position;
-
-        if mouse_button_input.pressed(MouseButton::Left) {
-            custom_uni.left = mouse_pos.x / 100.0;
-            // println!("left: {}, right: {}", custom_uni.left, custom_uni.mech);
-            println!("BEZ left: {}", custom_uni.left,);
-        } else if mouse_button_input.pressed(MouseButton::Right) {
-            custom_uni.mech = mouse_pos.x / 100.0;
-            // custom_uni.ya.x = mouse_pos.x / 100.0;
-            // custom_uni.ya.y = mouse_pos.y / 100.0;
-        }
-    }
-}
-
 pub fn spawn_bezier_function(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut plots: ResMut<Assets<Plot>>,
     // mut spawn_beziercurve_event: EventReader<SpawnBezierCurveEvent>,
-    mut change_canvas_material_event: EventReader<ChangeCanvasMaterialEvent>,
+    mut change_canvas_material_event: EventReader<UpdateShadersEvent>,
     query: Query<(Entity, &BezierCurveUniform)>,
 ) {
     // for event in spawn_beziercurve_event.iter() {
@@ -220,7 +200,7 @@ pub fn plot_fn(
             .map(|x| Vec2::new(*x, func(*x)))
             .collect::<Vec<Vec2>>();
 
-        let ys_world = ys.iter().map(|y| plot.to_world(*y)).collect::<Vec<Vec2>>();
+        let ys_world = ys.iter().map(|y| plot.to_local(*y)).collect::<Vec<Vec2>>();
 
         let (dys, _) = make_df(&xs, &func);
 
@@ -230,10 +210,10 @@ pub fn plot_fn(
             .map(|(dy, y)| *dy + *y)
             .collect::<Vec<Vec2>>();
 
-        // let dys_p_ys_world = plot.plot_to_world(&dys_p_ys);
+        // let dys_p_ys_world = plot.plot_to_local(&dys_p_ys);
         let dys_p_ys_world = dys_p_ys
             .iter()
-            .map(|y| plot.to_world(*y))
+            .map(|y| plot.to_local(*y))
             .collect::<Vec<Vec2>>();
 
         let mut ends = Vec::new();
@@ -376,7 +356,7 @@ pub fn plot_fn(
 
         // TODO: z position is here
         for position in mesh0 {
-            mesh_pos_attributes.push([position.x, position.y, -30.0]);
+            mesh_pos_attributes.push([position.x, position.y, 0.0]);
         }
 
         let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
@@ -396,7 +376,7 @@ pub fn plot_fn(
                 BezierMesh2d::default(),
                 Mesh2dHandle(meshes.add(mesh)),
                 GlobalTransform::default(),
-                Transform::from_translation(Vec3::new(0.0, 0.0, 3.0) + plot.position.extend(0.0)),
+                Transform::from_translation(plot.canvas_position.extend(1.3)),
                 // Transform::from_translation(Vec3::new(0.0, 0.0, 3.0)),
                 Visibility::default(),
                 ComputedVisibility::default(),
@@ -405,8 +385,8 @@ pub fn plot_fn(
                 mech: if bezier_plot.mech { 1.0 } else { 0.0 },
                 left: 1.0,
                 zoom: 1.0,
-                inner_canvas_size_in_pixels: plot.size / (1.0 + plot.outer_border),
-                canvas_position_in_pixels: plot.position,
+                inner_canvas_size_in_pixels: plot.canvas_size / (1.0 + plot.outer_border),
+                canvas_position_in_pixels: plot.canvas_position,
                 color: col_to_vec4(bezier_plot.color),
                 size: bezier_plot.size,
                 style: bezier_plot.line_style.clone().to_int32(),

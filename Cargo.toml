@@ -13,3 +13,20 @@ bevy = { git = "https://github.com/bevyengine/bevy.git", rev = "33ef5b5039ce4bea
 # flo_curves = "0.6"
 itertools-num = "0.1"
 bytemuck = "1.7"
+rand = "0.8"
+
+[[example]]
+name = "showcase"
+path = "examples/showcase.rs"
+
+[[example]]
+name = "markers"
+path = "examples/markers.rs"
+
+[[example]]
+name = "minimal"
+path = "examples/minimal.rs"
+
+[[example]]
+name = "analytic"
+path = "examples/analytic.rs"
