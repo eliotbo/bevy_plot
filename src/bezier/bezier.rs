@@ -145,7 +145,7 @@ pub fn update_bezier_uniform(
             *bez_uni = BezierCurveUniform {
                 mech: if bezier_curve.mech { 1.0 } else { 0.0 },
                 dummy: plot.bezier_dummy,
-                zoom: plot.globals.zoom,
+                zoom: plot.zoom,
                 inner_canvas_size_in_pixels: plot.canvas_size / (1.0 + plot.outer_border),
                 canvas_position_in_pixels: plot.canvas_position,
                 color: col_to_vec4(bezier_curve.color),
@@ -228,25 +228,13 @@ pub fn plot_fn(
     plot: &mut Plot,
     plot_handle: &Handle<Plot>,
     time: &Res<Time>,
-    // maybe_bezier_unifor: Option<BezierCurveUniform>,
-    // f2: fn(f32) -> f32,
 ) {
-    // let num_pts = xs.len();
-
     plot.compute_zeros();
-    // for func in plot.smooth_functions.iter() {
-    // for (curve_number, bezier_curve) in plot.data.bezier_groups.iter().enumerate() {
-    // println!("Bezier");
+
     if let Some(bezier_curve) = plot.data.bezier_groups.get(curve_number) {
         let func = bezier_curve.function.clone();
-        // let color = bezier_curve.color;
 
         let num_pts = plot.bezier_num_points;
-
-        // let ys = xs
-        //     .iter()
-        //     .map(|x| Vec2::new(*x, f2(*x)))
-        //     .collect::<Vec<Vec2>>();
 
         let t = time.seconds_since_startup() as f32;
         let ys = xs
@@ -434,7 +422,7 @@ pub fn plot_fn(
             .insert(BezierCurveUniform {
                 mech: if bezier_curve.mech { 1.0 } else { 0.0 },
                 dummy: plot.bezier_dummy,
-                zoom: plot.globals.zoom,
+                zoom: plot.zoom,
                 inner_canvas_size_in_pixels: plot.canvas_size / (1.0 + plot.outer_border),
                 canvas_position_in_pixels: plot.canvas_position,
                 color: col_to_vec4(bezier_curve.color),

@@ -129,30 +129,16 @@ pub(crate) struct WaitForUpdatePlotLabelsEvent {
     pub quad_entity: Entity,
 }
 
-// should this be private?
+/// Lower and upper bounds for the canvas. 
 #[derive(Debug, Clone, AsStd140)]
 pub struct PlotCanvasBounds {
     pub up: Vec2,
     pub lo: Vec2,
 }
-#[derive(Debug, Copy, Clone, AsStd140)]
-pub struct PlotGlobals {
-    pub time: f32,
-    pub zoom: f32,
-    pub dum1: f32,
-    pub dum2: f32,
-}
 
-impl Default for PlotGlobals {
-    fn default() -> Self {
-        PlotGlobals {
-            time: 0.0,
-            zoom: 1.0,
-            dum1: 0.0,
-            dum2: 0.0,
-        }
-    }
-}
+
+
+
 
 #[derive(Debug, Clone)]
 /// struct containing the data to be plotted and metaparameters of the plot.
@@ -344,8 +330,7 @@ pub struct SendPlotEvent {
     pub segments: bool,
 }
 
-/// Contains all relevant information to both the look of the canvas and the
-/// data to be plotted.
+/// Contains all relevant information to both the look of the canvas and the data to be plotted.
 #[derive(Debug, Clone, Component, TypeUuid)]
 #[uuid = "a6354c45-cc21-48f7-99cc-8c1924d2427b"]
 pub struct Plot {
@@ -354,39 +339,68 @@ pub struct Plot {
 
     /// canvas related
     pub canvas_position: Vec2,
+
+    /// Distance between consecutive grid lines
     pub tick_period: Vec2,
-    pub(crate) bounds: PlotCanvasBounds,
-    pub globals: PlotGlobals,
+    
+    /// Size of the margins with respect to the canvas_size. The default is set to ``` Vec2::new(0.03 * size.y / size.x, 0.03) ```
     pub outer_border: Vec2,
+
+    /// Size of the graph in pixels
     pub canvas_size: Vec2,
+
+    /// Color of even tiles
     pub background_color1: Color,
+
+    /// Color of odd tiles
     pub background_color2: Color,
+
+    /// The grid is shown by default
     pub show_grid: bool,
+
+    /// Position of the origin of the graph in World coordinates
     pub zero_world: Vec2,
 
+    /// unused
+    pub time: f32,
+
+    /// The current zoom value: adjustable with the MouseWheel
+    pub zoom: f32,
+
+    /// Hides the black contour around the canvas
     pub hide_contour: bool,
+
+    /// Hides numeric labels by the side of the grid lines
     pub hide_tick_labels: bool,
+
+    /// Hides half the numeric tick labels for a less crowded feel
     pub hide_half_ticks: bool,
-    pub significant_digits: usize,
-    pub show_target: bool,
-    pub show_axes: bool,
-    pub(crate) target_toggle: bool,
     pub tick_label_color: Color,
+
+    /// Adjusts the number of significant digits for the tick labels
+    pub significant_digits: usize,
+
+    /// A target can be spawned together with a pair of coordinates by pressing MouseButton::Middle
+    pub show_target: bool,
+    /// The color for the coordinate pair by the side of the target
     pub target_label_color: Color,
     pub target_color: Color,
     pub target_position: Vec2,
     pub target_significant_digits: usize,
 
+    /// Axes are shown by default
+    pub show_axes: bool,
+
     /// Only related to the plot_analytical() and plotopt_analytical() functions
     pub bezier_num_points: usize,
-    pub bezier_dummy: f32,
 
-    /// Contains the data needed by the bezier, segments and markers folders
+    /// Contains the data and metaparameters needed by the bezier, segments and markers folders
     pub data: PlotData,
     
-
-    pub handle: Option<Handle<Plot>>,
-    pub do_spawn_plot: bool,
+    pub(crate) target_toggle: bool,
+    pub(crate) bounds: PlotCanvasBounds,
+    pub(crate) bezier_dummy: f32,
+    pub(crate) do_spawn_plot: bool,
 }
 
 impl Default for Plot {
@@ -403,12 +417,8 @@ impl Default for Plot {
                 lo: Vec2::new(-0.2, -0.2),
             },
 
-            globals: PlotGlobals {
-                time: 0.0, // unused
-                zoom: 1.0,
-                dum1: 0.0, // (for tests only)
-                dum2: 0.0, // (for tests only)
-            },
+            time: 0.0,
+            zoom: 1.0,
 
             show_grid: true,
             background_color1: Color::rgba(0.048, 0.00468, 0.0744, 1.0) ,
@@ -438,13 +448,7 @@ impl Default for Plot {
             bezier_num_points: 100,
             bezier_dummy: 0.0,
 
-
-
-
-            handle: None,
-
             do_spawn_plot: true,
-
         };
 
         plot.compute_zeros();
@@ -644,7 +648,7 @@ impl Plot {
         self.bounds.lo =
             self.plot_coord_mouse_pos - (self.plot_coord_mouse_pos - self.bounds.lo) * multiplier;
 
-        self.globals.zoom *= multiplier;
+        self.zoom *= multiplier;
     }
 
     pub fn move_axes(&mut self, mouse_delta: Vec2) {

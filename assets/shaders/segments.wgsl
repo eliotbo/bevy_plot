@@ -66,9 +66,6 @@ fn toLinear(sRGB: float4) -> float4
 
 
 struct FragmentInput {
-    // [[location(0)]] uv: vec2<f32>;
-    // [[location(1)]] pos_scale: vec4<f32>;
-    // [[location(2)]] color: vec4<f32>;
     [[location(0)]] ends: vec4<f32>;
     [[location(1)]] uv: vec2<f32>;
     [[location(2)]] control: vec4<f32>;
@@ -125,18 +122,13 @@ fn sdRoundedBox(p: vec2<f32>, b: vec2<f32>, r: vec4<f32>) -> f32 {
 
 
 struct SegmentUniform {
+  color: float4;
     mech: f32;
-    segmemt_size: f32;
+    segment_thickness: f32;
     hole_size: f32;
     zoom: f32;
-    // point_type: i32;
-    quad_size: f32;
-    contour: f32;
     inner_canvas_size_in_pixels: float2;
-    canvas_position_in_pixels: float2;
-    color: float4;
-    segment_point_color: float4;
-    
+    canvas_position_in_pixels: float2;    
 };
 
 [[group(2), binding(0)]]
@@ -147,17 +139,13 @@ var<uniform> uni: SegmentUniform;
 fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
   
     let width = 1.0 ;
-    // let segmemt_size = uni.segmemt_size * width;
 
     let zoom = uni.zoom;
-    var w = width * zoom * sqrt(uni.segmemt_size * 4.5) ;
+    var w = width * zoom * sqrt(uni.segment_thickness * 4.5) ;
   
-    var solid = width * zoom * uni.segmemt_size ;
-
+    var solid = width * zoom * uni.segment_thickness ;
 
     var out_col = uni.color;
-
-
 
     let y0 = in.ends.xy;
     let y1 = in.ends.zw;
@@ -166,10 +154,6 @@ fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
     let q0 = y0 - dy  * 10.0;
     let q1 = y1 + dy  * 10.0;
 
-
-
-    // let point_type = i32(uni.point_type);
-    // let point_type = 6;
 
     // change the aliasing as a function of the zoom
     var circ_zoom = zoom;
@@ -182,25 +166,10 @@ fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
       circ_zoom =  sqrt(sqrt(zoom));
     }
 
-    // let d = sdSegment(in.uv, q0, q1) ;
-    let d = sdSegment(in.uv, y0, y1) ;
 
-    
+    let d = sdSegment(in.uv, y0, y1) ;
     let s = smoothStep(solid, solid + w, d);
     out_col = out_col * (1.0 - s);
-
-
-  // let black = float4(0.0, 0.0, 0.0, 1.0);
-
-
-
-    // let t0 = y0 - dy  *  uni.segmemt_size;
-    // let t1 = y1 + dy  *  uni.segmemt_size;
-
-    // let d = sdSegment(in.uv, t0, t1) ;
-
-    // let s = smoothStep(solid *0.95, solid *0.98, d);
-    // out_col = mix(out_col, uni.color, (1.0 - s));
 
 
     

@@ -1,3 +1,5 @@
+#![warn(missing_docs)]
+
 pub mod canvas;
 // use canvas::*;
 

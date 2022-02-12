@@ -48,7 +48,8 @@ struct GraphEditShader {
     mouse_pos: vec2<f32>;
     tick_period: vec2<f32>;
     bounds: Bound;
-    globals: Globals;
+    time: f32;
+    zoom: f32;
     size: float2;
     outer_border: float2;
     position: vec2<f32>;

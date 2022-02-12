@@ -1,4 +1,3 @@
-// Import the standard 2d mesh uniforms and set their bind groups
 #import bevy_sprite::mesh2d_view_bind_group
 [[group(0), binding(0)]]
 var<uniform> view: View;
@@ -32,9 +31,7 @@ struct Vertex {
     [[location(3)]] control: vec4<f32>;
 };
 struct VertexOutput {
-    // The vertex shader must set the on-screen position of the vertex
     [[builtin(position)]] clip_position: vec4<f32>;
-    // We pass the vertex color to the framgent shader in location 0
     [[location(0)]] ends: vec4<f32>;
     [[location(1)]] uv: vec2<f32>;
     [[location(2)]] control: vec4<f32>;
@@ -60,7 +57,7 @@ fn fromLinear(linearRGB: float4) -> float4
     return mix(higher, lower, cutoff);
 }
 
-// // Converts a color from sRGB gamma to linear light gamma
+// Converts a color from sRGB gamma to linear light gamma (unused?)
 fn toLinear(sRGB: float4) -> float4
 {
     let cutoff = vec4<f32>(sRGB < float4(0.04045));
@@ -70,9 +67,8 @@ fn toLinear(sRGB: float4) -> float4
     return mix(higher, lower, cutoff);
 }
 
-// The input of the fragment shader must correspond to the output of the vertex shader for all `location`s
+
 struct FragmentInput {
-    // The color is interpolated between vertices by default
     [[location(0)]] ends: vec4<f32>;
     [[location(1)]] uv: vec2<f32>;
     [[location(2)]] control: vec4<f32>;
@@ -265,7 +261,6 @@ fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
            let sc = smoothStep(solid, w * 0.9 *0.5 + solid , dc);
            
             // let dy = normalize(p1 - control);
-
             // let dc = sdCircle(in.uv, p1 + dy * 4.0 , 0.0);
             // let sc = smoothStep(solid, solid + w * 1.0 , dc);
 

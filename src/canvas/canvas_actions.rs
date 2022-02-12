@@ -501,7 +501,6 @@ pub(crate) fn change_plot(
                 //
                 // When pressing P and moving the mouse, the tick period changes
                 if keyboard_input.pressed(KeyCode::P) {
-                    plot.globals.dum1 += (event.delta.x + event.delta.y) / 100.0;
                     plot.tick_period.x *= 1.0 + (event.delta.x) / 1000.0;
                     plot.tick_period.y *= 1.0 + (event.delta.y) / 1000.0;
 
@@ -516,9 +515,6 @@ pub(crate) fn change_plot(
                         canvas_entity,
                         canvas_material_handle: canvas_material_handle.clone(),
                     });
-                }
-                if keyboard_input.pressed(KeyCode::W) {
-                    plot.globals.dum2 += (event.delta.x + event.delta.y) / 100.0;
                 }
             }
 

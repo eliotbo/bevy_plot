@@ -114,8 +114,6 @@ fn plot_segments(
 
         let ys_world = ys.iter().map(|y| plot.to_local(*y)).collect::<Vec<Vec2>>();
 
-        let quad_size = 30.0;
-
         let mut mesh0 = Vec::new();
         let mut mesh_attr_uvs = Vec::new();
         let mut inds = Vec::new();
@@ -209,16 +207,12 @@ fn plot_segments(
             .insert(plot_handle.clone())
             .insert(SegmentUniform {
                 mech: if segment_plot.mech { 1.0 } else { 0.0 },
-                segment_size: segment_plot.size,
+                segment_thickness: segment_plot.size,
                 hole_size: 1.0,
                 zoom: 1.0,
-
-                segment_point_color: col_to_vec4(segment_plot.segment_point_color),
                 color: col_to_vec4(segment_plot.color),
-                quad_size,
                 inner_canvas_size_in_pixels: plot.canvas_size / (1.0 + plot.outer_border),
                 canvas_position: plot.canvas_position,
-                contour: if segment_plot.draw_contour { 1.0 } else { 0.0 },
             });
     }
 }
@@ -227,18 +221,18 @@ fn plot_segments(
 #[derive(Component, Default)]
 pub(crate) struct SegmentMesh2d;
 
+/// Shader uniform parameters sent to segments.wgsl.
 #[derive(Component, Clone, AsStd140)]
 pub struct SegmentUniform {
+    pub color: Vec4,
+    /// gives segments a mechanical joint look if > 0.5
     pub mech: f32,
-    pub segment_size: f32,
+    pub segment_thickness: f32,
+    /// unused
     pub hole_size: f32,
     pub zoom: f32,
-    pub quad_size: f32,
-    pub contour: f32,
     pub inner_canvas_size_in_pixels: Vec2,
     pub canvas_position: Vec2,
-    pub color: Vec4,
-    pub segment_point_color: Vec4,
 }
 
 struct SegmentMesh2dPipeline {
@@ -429,8 +423,8 @@ fn extract_colored_mesh2d(
     commands.insert_or_spawn_batch(values);
 }
 
-pub struct SegmentUniformBindGroup {
-    pub value: BindGroup,
+struct SegmentUniformBindGroup {
+    value: BindGroup,
 }
 
 fn queue_customuniform_bind_group(
@@ -503,7 +497,7 @@ fn queue_colored_mesh2d(
     }
 }
 
-pub struct SetSegmentUniformBindGroup<const I: usize>;
+struct SetSegmentUniformBindGroup<const I: usize>;
 impl<const I: usize> EntityRenderCommand for SetSegmentUniformBindGroup<I> {
     type Param = (
         SRes<SegmentUniformBindGroup>,

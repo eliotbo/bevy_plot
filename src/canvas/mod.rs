@@ -201,12 +201,15 @@ pub(crate) struct UpdateTargetLabelEvent {
 #[uuid = "1e08866c-0b8a-437e-8bae-38844b21137e"]
 #[allow(non_snake_case)]
 pub struct CanvasMaterial {
-    // mouse_pos in the reference frame of the graph, corresponding to its axes coordinates
+    /// Mouse position in the reference frame of the graph, corresponding to its axes coordinates
     pub mouse_pos: Vec2,
     pub tick_period: Vec2,
+
+    /// Extreme points of the canvas
     pub bounds: PlotCanvasBounds,
 
-    pub globals: PlotGlobals,
+    pub time: f32,
+    pub zoom: f32,
     pub size: Vec2,
     pub outer_border: Vec2,
     pub position: Vec2,
@@ -228,7 +231,8 @@ impl CanvasMaterial {
             mouse_pos: Vec2::ZERO,
             tick_period: plot.tick_period,
             bounds: plot.bounds.clone(),
-            globals: plot.globals,
+            time: 0.0,
+            zoom: 1.0,
             size: plot.canvas_size,
             outer_border: plot.outer_border,
             position: plot.canvas_position,
@@ -254,7 +258,8 @@ impl CanvasMaterial {
         self.position = plot.canvas_position;
         self.tick_period = plot.tick_period;
         self.bounds = plot.bounds.clone();
-        self.globals = plot.globals;
+        self.zoom = plot.zoom;
+        self.time = plot.time;
         self.size = plot.canvas_size;
         self.outer_border = plot.outer_border;
         self.show_target = if plot.show_target && plot.target_toggle {
