@@ -13,6 +13,7 @@ use crate::markers::*;
 use crate::util::*;
 use crate::segments::*;
 
+/// Main plugin for bevy_plot
 pub struct PlotPlugin;
 
 // z planes from bottom to top:
@@ -117,6 +118,8 @@ fn do_spawn_plot(
     }
 }
 
+/// See the `animate.rs` example, where ```UpdateBezierShaderEvent``` is used to tell bevy_plot that
+/// the the ```BezierCurveUniform``` needs to be updated.
 pub struct UpdateBezierShaderEvent {
     pub plot_handle: Handle<Plot>,
     pub entity: Entity,
@@ -129,7 +132,8 @@ pub(crate) struct WaitForUpdatePlotLabelsEvent {
     pub quad_entity: Entity,
 }
 
-/// Lower and upper bounds for the canvas. 
+/// Lower and upper bounds for the canvas. The `x` axis ranges from lo.x to up.x and 
+/// the `y` axis ranges from lo.y to up.y.
 #[derive(Debug, Clone, AsStd140)]
 pub struct PlotCanvasBounds {
     pub up: Vec2,
@@ -142,7 +146,7 @@ pub struct PlotCanvasBounds {
 
 #[derive(Debug, Clone)]
 /// Struct containing the data to be plotted and metaparameters of any analytical plot. 
-/// In the ```data.bezier_groups``` field of a Plot.
+/// It can be found in  the ```data.bezier_groups``` field of a Plot.
 pub struct BezierData {
     pub function: fn(f32, f32) -> f32,
     pub size: f32,
@@ -170,8 +174,8 @@ impl Default for BezierData {
 }
 
 
-/// struct containing the data to be plotted and metaparameters of a marker (or scatter) plot.
-/// In the ```data.marker_groups``` field of a Plot.
+/// Struct containing the data to be plotted and metaparameters of a marker (or scatter) plot.
+/// It can be found in the ```data.marker_groups``` field of a Plot.
 #[derive(Debug, Clone)]
 pub struct MarkerData {
     pub data: Vec<Vec2>,
@@ -195,8 +199,8 @@ impl Default for MarkerData {
     }
 }
 
-/// struct containing the data to be plotted and metaparameters of a segment (or regular) plot.
-/// In the ```data.segment_groups``` field of a Plot.
+/// Struct containing the data to be plotted and metaparameters of a segment (or regular) plot.
+/// It can be found in  the ```data.segment_groups``` field of a Plot.
 #[derive(Debug, Clone)]
 pub struct SegmentData {
     pub data: Vec<Vec2>,

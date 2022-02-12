@@ -597,7 +597,7 @@ type DrawBezierMesh2d = (
 );
 
 /// Plugin that renders [`BezierMesh2d`]s
-pub struct BezierMesh2dPlugin;
+pub(crate) struct BezierMesh2dPlugin;
 
 impl Plugin for BezierMesh2dPlugin {
     fn build(&self, app: &mut App) {

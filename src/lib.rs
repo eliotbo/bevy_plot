@@ -1,15 +1,15 @@
 // #![warn(missing_docs)]
 
 pub mod canvas;
-// use canvas::*;
+pub use canvas::*;
 
 mod markers;
 pub use markers::*;
 
-pub mod inputs;
-pub use inputs::*;
+mod inputs;
+// use inputs::*;
 
-pub mod util;
+mod util;
 
 mod bezier;
 pub use bezier::*;

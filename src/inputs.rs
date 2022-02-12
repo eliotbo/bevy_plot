@@ -9,7 +9,7 @@ use bevy::{
 // use crate::markers::SpawnMarkersEvent;
 // use crate::util::*;
 
-pub struct Cursor {
+pub(crate) struct Cursor {
     pub position: Vec2,
     pub pos_relative_to_click: Vec2,
     pub last_click_position: Vec2,
@@ -25,7 +25,7 @@ impl Default for Cursor {
     }
 }
 
-pub fn record_mouse_events_system(
+pub(crate) fn record_mouse_events_system(
     mut cursor_moved_events: EventReader<CursorMoved>,
     mouse_button_input: Res<Input<MouseButton>>,
     mut cursor_res: ResMut<Cursor>,
