@@ -36,7 +36,7 @@ use bevy::{
 
 use crate::plot::*;
 
-use crate::canvas::UpdateShadersEvent;
+use crate::canvas::RespawnAllEvent;
 use crate::util::*;
 
 // use flo_curves::*;
@@ -45,7 +45,7 @@ use crate::util::*;
 pub fn segments_setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut change_canvas_material_event: EventReader<UpdateShadersEvent>,
+    mut change_canvas_material_event: EventReader<RespawnAllEvent>,
     mut plots: ResMut<Assets<Plot>>,
     query: Query<(Entity, &Handle<Plot>), With<SegmentUniform>>,
 ) {
@@ -212,7 +212,7 @@ pub fn plot_segments(
                 //     flip: false,
                 // }))),
                 GlobalTransform::default(),
-                Transform::from_translation(plot.canvas_position.extend(1.0)),
+                Transform::from_translation(plot.canvas_position.extend(1.11)),
                 Visibility::default(),
                 ComputedVisibility::default(),
             ))

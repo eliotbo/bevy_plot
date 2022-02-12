@@ -1,6 +1,3 @@
-// #import bevy::pbr::mesh_view_bind_group
-// #import bevy::pbr::mesh_struct
-
 type float4 = vec4<f32>;
 type float2 = vec2<f32>;
 
@@ -56,12 +53,13 @@ struct GraphEditShader {
     outer_border: float2;
     position: vec2<f32>;
     show_target: f32;
+    hide_contour: f32;
     target_pos: float2;
-// 
-    // vars: array<Interval, 16>;
-    // lines_params: array<LineParams, 8> ;
-    // data: array<array<float4, 256>, 8>;
-    // data: array<float2, 64>;
+    background_color1: float4;
+    background_color2: float4;
+    target_color: float4;
+    show_grid: f32;
+    show_axes: f32;
     
 };
 
@@ -94,7 +92,6 @@ fn from_pix_to_local(uv_orig: float2) -> float2 {
 };
 
 fn from_local_to_pixels(uv_local: float2) -> float2 {
-    // unimplemented
     var uv = uv_local;
 
     uv.x = uv.x * mate.size.x / (1.0 + mate.outer_border.x ) ;
@@ -102,14 +99,11 @@ fn from_local_to_pixels(uv_local: float2) -> float2 {
 
     uv.y = uv.y * mate.size.y / (1.0 + mate.outer_border.y ) ;
     uv.y = uv.y / (mate.bounds.up.y - mate.bounds.lo.y);
-
-    // only scaled at the moment: no offset to the original uv
 
     return uv;
 };
 
 fn from_local_to_pixels2(uv_local: float2) -> float2 {
-    // unimplemented
     var uv = uv_local;
 
     uv.x = uv.x * mate.size.x / (1.0 + mate.outer_border.x ) ;
@@ -118,15 +112,10 @@ fn from_local_to_pixels2(uv_local: float2) -> float2 {
     uv.y = uv.y * mate.size.y / (1.0 + mate.outer_border.y ) ;
     uv.y = uv.y / (mate.bounds.up.y - mate.bounds.lo.y);
 
-    // only scaled at the moment: no offset to the original uv
-
     return uv;
 };
 
-
-
-
-
+// There are currently no function for x % 2 in wgpu
 fn even(uv: f32) -> f32 {
     var tempo: f32 = 0.0;
     let whatever = modf(uv + 1.0, &tempo);
@@ -138,7 +127,6 @@ fn even(uv: f32) -> f32 {
     } else {
         return 0.0;
     }
-
 }
 
 //////////////////////// sdfs //////////////////////////////////////
@@ -161,48 +149,12 @@ fn sdSegment(p: vec2<f32>, a: vec2<f32>, b: vec2<f32>) -> f32 {
 }
 
 fn draw_segment(thickness: f32, rect: vec4<f32>, uv: vec2<f32>, segment: Segment, color: float4, alpha: f32 ) -> vec4<f32> {
-    // let uv = from_local_to_pixels(uv_orig);
-    let t = thickness; // * mate.globals.zoom;
+    let t = thickness; 
     let d = sdSegment(uv, segment.start, segment.end);
-    let seg_start = smoothStep(t, t + t * 2.0,   d);
+    let seg_start = smoothStep(t, t + 1.0,   d);
     let rect2 = mix(rect,  color,   alpha*abs( 1.0 -seg_start));
     return rect2;
 }
-
-fn draw_segment_orig(
-    thickness: f32, 
-    rect: vec4<f32>,
-    uv_orig: vec2<f32>, 
-    segment: Segment, 
-    color: float4, 
-    alpha: f32 
-    ) -> vec4<f32> {
-
-    let uv = from_local_to_pixels(uv_orig);
-    let start = from_local_to_pixels(segment.start);
-    let end = from_local_to_pixels(segment.end);
-
-    let t = thickness;
-    let d = sdSegment(uv, start, end);
-    let seg_start = smoothStep(t, t + t * 5.0,   d);
-    let rect2 = mix(rect,  color,   alpha*abs( 1.0 -seg_start));
-    return rect2;
-}
-
-// fn draw_segment(
-//     thickness: f32, 
-//     rect: vec4<f32>, 
-//     uv: vec2<f32>, 
-//     segment: Segment,
-//     color: float4, 
-//     alpha: f32 
-//     ) -> vec4<f32> {
-
-//     let d = sdSegment(uv, segment.start, segment.end);
-//     let seg_start = smoothStep(thickness, thickness + thickness * 10.0,   d);
-//     let rect2 = mix(rect,  color,   alpha*abs( 1.0 -seg_start));
-//     return rect2;
-// }
 
 fn sdCircle(pos: vec2<f32>, r: f32) -> f32 {
     return length(pos)-r;
@@ -220,15 +172,9 @@ fn draw_circle(
     let t = solid * 100.0;
     let s = smooth_dist2 * 200.0;
 
-    //     let t = mate.globals.zoom * solid * 100.0;
-    // let s = smooth_dist2 * mate.globals.zoom * 100.0;
-
-    // let m = mate.size.x / 600.0 * float2( 1.0, (mate.size.y / mate.size.x) * (mate.bounds.up.x - mate.bounds.lo.x) / (mate.bounds.up.y - mate.bounds.lo.y)  );
-
     let uv_pixels = from_local_to_pixels(uv_orig - point);
     let r_pixels_vec2 = from_local_to_pixels(float2(r,r));
-    // var sd_start = sdCircle((uv_orig - point) * m, r * mate.globals.zoom);
-    // var sd_start = sdCircle( uv_pixels, r_pixels_vec2.x );
+
     var sd_start = sdCircle( uv_pixels, r_pixels_vec2.x  );
     //
     if (annular) {
@@ -248,8 +194,6 @@ fn draw_circle(
 fn fragment(in: VertexOutput) -> [[location(0)]] vec4<f32> {
 
     // ///////////////////// coordinates /////////////////////////////////
-    // var uv = (in.uv - mate.position) ;
-
     let x_max = mate.bounds.up.x;
     let y_max = mate.bounds.up.y;
 
@@ -258,15 +202,6 @@ fn fragment(in: VertexOutput) -> [[location(0)]] vec4<f32> {
 
     let x_range = x_max - x_min;
     let y_range = y_max - y_min;
-
-    // uv.x = uv.x * (1.0 + mate.outer_border.x ) / mate.size.x ;
-    // uv.x = uv.x * x_range ; 
-
-    // uv.y = uv.y * (1.0 + mate.outer_border.y ) / mate.size.y;
-    // uv.y = uv.y * y_range;
-
-    // let current_zero_pos = float2( x_range / 2.0 + x_min, y_range / 2.0 + y_min);
-    // uv = uv + current_zero_pos;
     // ///////////////////// coordinates /////////////////////////////////
 
     var uv = from_pix_to_local(in.uv) ;
@@ -278,36 +213,29 @@ fn fragment(in: VertexOutput) -> [[location(0)]] vec4<f32> {
     let green = vec4<f32> (0.0, 1.0, 0.0, 1.0);
     let black = vec4<f32> (0.0, 0.0, 0.0, 1.0);
 
-    let bm = 0.4; 
-    let  colBackground1 = vec4<f32> ( vec3<f32>(62./255., 6./255., 95./255.)/4., 1.0 / bm) * bm;
-    let  colBackground2 = vec4<f32>( vec3<f32>(112./255., 11./255., 151./255.)/4., 1.0 / bm ) *bm;
+    let colBackground1 = mate.background_color1;
+    let colBackground2 = mate.background_color2;
     ///////////////////// colors /////////////////////
     
 
     ///////////////////// background /////////////////
     let tile_freq_x: f32 = 1.0 / mate.tick_period.x;
     let tile_freq_y: f32 = 1.0 / mate.tick_period.y;
-
-    // var temp: f32 = 0.5;
-    // let dum = modf(( floor(tile_freq*uv.x) + floor(tile_freq*uv.y) ) , &temp);
    
-    let what = even( (floor(tile_freq_x*uv.x) + floor(tile_freq_y*uv.y) ) ) ; //+ even(uv.y * 5.);
+    let tiles = even( (floor(tile_freq_x*uv.x) + floor(tile_freq_y*uv.y) ) ) ; //+ even(uv.y * 5.);
 
-    var rect: vec4<f32> = mix(colBackground1, colBackground2, what );
+    var rect: vec4<f32> = mix(colBackground1, colBackground2, tiles );
     ///////////////////// background /////////////////
 
 
 
-    ////////////////////////////////// bars ////////////////////////////////
-    
+    ////////////////////////////////// grid ////////////////////////////////
+    let so = mate.size / (1.0 + mate.outer_border);
+    let edges = float2(0.5 , 0.5) * so;
 
-    let bah = mate.size / (1.0 + mate.outer_border);
-    let edges = float2(0.5 , 0.5) * bah;
+    let origin = (-mate.bounds.lo / (mate.bounds.up - mate.bounds.lo) - 0.5) * so;
 
-    // let dv = from_local_to_pixels(floor(mate.bounds.lo / mate.tick_period) *  mate.tick_period) ;
-    let origin = (-mate.bounds.lo / (mate.bounds.up - mate.bounds.lo) - 0.5) * bah;
-
-    let tick_period_pix = mate.tick_period / (mate.bounds.up - mate.bounds.lo) * bah;
+    let tick_period_pix = mate.tick_period / (mate.bounds.up - mate.bounds.lo) * so;
     let bar_alpha = 1.0;
 
     var segment: Segment;
@@ -317,7 +245,8 @@ fn fragment(in: VertexOutput) -> [[location(0)]] vec4<f32> {
     // in the tiki coordinate, 1 corresponds to one tick period
     let tiki = (in.uv - mate.position - origin) / tick_period_pix   - float2(0.5, 0.5) * sig ;
 
-    // mod function take a reference to a dummy variable
+    // In wgpu currently, the mod function take a reference to a dummy variable.
+    // This will change in the future.
     var temp_y: f32 = 0.0;
     var temp_x: f32 = 0.0;
     let sad_x = modf(tiki.x , &temp_x);
@@ -333,28 +262,32 @@ fn fragment(in: VertexOutput) -> [[location(0)]] vec4<f32> {
 
     let bars_thickness  = 0.5 / tick_period_pix;
 
-    // horizontal bars
-    segment.start = float2(-edges.x,  half.y) ;
-    segment.end = float2( edges.x,  half.y) ;
-    rect = draw_segment(bars_thickness.y, rect, ggg  , segment, black, bar_alpha) ;
+    if (mate.show_grid > 0.5 ) {
+        // horizontal bars
+        segment.start = float2(-edges.x,  half.y) ;
+        segment.end = float2( edges.x,  half.y) ;
+        rect = draw_segment(bars_thickness.y, rect, ggg  , segment, black, bar_alpha) ;
 
-    // vertical bars
-    segment.start = float2(half.x, -edges.y) ;
-    segment.end = float2( half.x, edges.y) ;
-    rect = draw_segment(bars_thickness.x , rect, ggg  , segment, black, bar_alpha) ;
+        // vertical bars
+        segment.start = float2(half.x, -edges.y) ;
+        segment.end = float2( half.x, edges.y) ;
+        rect = draw_segment(bars_thickness.x , rect, ggg  , segment, black, bar_alpha) ;
+    }
     /////////////////////////////////////// bars /////////////////////////////////////
 
 
 
     /////////////////////////////////////// axes //////////////////////////////
-    segment.start = float2(-edges.x,  origin.y) ;
-    segment.end = float2( edges.x,  origin.y) ;
-    rect = draw_segment(1.0, rect, in.uv - mate.position, segment, black, bar_alpha) ;
+    if (mate.show_axes > 0.5) {
+        segment.start = float2(-edges.x,  origin.y);
+        segment.end = float2( edges.x,  origin.y);
+        rect = draw_segment(1.0, rect, in.uv - mate.position, segment, black, bar_alpha) ;
 
 
-    segment.start = float2(origin.x , -edges.y) ;
-    segment.end = float2(origin.x , edges.y) ;
-    rect = draw_segment(1.0, rect, in.uv - mate.position, segment, black, bar_alpha) ;
+        segment.start = float2(origin.x , -edges.y);
+        segment.end = float2(origin.x , edges.y);
+        rect = draw_segment(1.0, rect, in.uv - mate.position, segment, black, bar_alpha) ;
+    }
     //////////////////////////////////////// axes //////////////////////////////
 
 
@@ -367,89 +300,47 @@ fn fragment(in: VertexOutput) -> [[location(0)]] vec4<f32> {
     /////////////////// borders /////////////////////////
 
 
-    // /////////////////// mouse target /////////////////////////
-    // // rect = draw_circle(rect, uv, rad*2. , black, ann, mate.mouse_pos);
-    // let gray = vec4<f32>(1.0, 1.0, 1.0, 1.0) * 0.5;
-    // // let aspect_ratio = mate.size.y / mate.size.x;
-    // // let aspect_ratio = 1.0;
-    // let target_thickness = 0.5 * mate.globals.zoom;
-    // let pos_edges = edges - mate.position;
-
-    // segment.start = float2( mate.mouse_pos.x, -pos_edges.y ) ;
-    // segment.end = float2(  mate.mouse_pos.x, pos_edges.y ) ;
-    // rect = draw_segment(target_thickness , rect, in.uv  , segment, gray, bar_alpha) ;
-
-    // segment.start = float2(-pos_edges.x,  mate.mouse_pos.y);
-    // segment.end = float2( pos_edges.x,  mate.mouse_pos.y);
-    // rect = draw_segment(target_thickness , rect, in.uv  , segment, gray, bar_alpha) ;
-    // /////////////////// mouse target /////////////////////////
-
     /////////////////// mouse target /////////////////////////
-    if (mate.show_target > 0.5) {
-        // rect = draw_circle(rect, uv, rad*2. , black, ann, mate.mouse_pos);
-        let gray = vec4<f32>(1.0, 1.0, 1.0, 1.0) * 0.5;
+    if (mate.show_target > 0.5) {       
         let aspect_ratio = mate.size.y / mate.size.x;
-        // let aspect_ratio = 1.0;
-        let target_thickness = 0.25; // mate.globals.zoom;
+
+        let target_thickness = 0.75; // mate.globals.zoom;
         let pos_edges = edges - mate.position;
 
         segment.start = float2( mate.target_pos.x, -pos_edges.y );
         segment.end = float2(  mate.target_pos.x, pos_edges.y );
-        rect = draw_segment(target_thickness , rect, in.uv  , segment, gray, bar_alpha) ;
+        rect = draw_segment(target_thickness, rect, in.uv, 
+            segment, mate.target_color, bar_alpha);
 
-        segment.start = float2(-pos_edges.x,  mate.target_pos.y);
-        segment.end = float2( pos_edges.x,  mate.target_pos.y);
-        rect = draw_segment(target_thickness , rect, in.uv  , segment, gray, bar_alpha) ;
+        segment.start = float2(-pos_edges.x, mate.target_pos.y);
+        segment.end = float2( pos_edges.x, mate.target_pos.y);
+        rect = draw_segment(target_thickness, rect, in.uv, 
+            segment, mate.target_color, bar_alpha);
     }
     /////////////////// mouse target /////////////////////////
 
 
     /////////////////// contours /////////////////////////
-    // segment.start = float2(x_min,  y_min);
-    // segment.end = float2(x_max,  y_min) ;
+    if (mate.hide_contour < 0.5) {
 
-    // segment.start = float2(0.02,  0.02);
-    // segment.end = float2(0.5 * 0.975,  0.0) * mate.size.x / 1.0 ;
+        let so = mate.size / (1.0 + mate.outer_border );
+        let ax_thick = 0.8 ;
 
-    let bah = mate.size / (1.0 + mate.outer_border );
-    let ax_thick = 0.8 ;
+        let r = 0.02 * so.x;
+        let d = sdRoundedBox(in.uv - mate.position,  so / 2.0, float4(r,r,r,r));
+        let s = smoothStep(0.0, 2.0, d );
 
-    let r = 0.02 * bah.x;
-    let d = sdRoundedBox(in.uv - mate.position,  bah / 2.0, float4(r,r,r,r));
-    let s = smoothStep(0.0, 2.0, d );
+        let colBackground3 = float4(colBackground2.xyz, 0.0);
+        rect = mix(rect, colBackground3, s);
 
-    let colBackground3 = float4(colBackground2.xyz, 0.0);
-    rect = mix(rect, colBackground3, s);
+        let r = 0.02 * so.x;
+        let d = sdRoundedBox(in.uv - mate.position,  so / 2.0, float4(r,r,r,r));
+        let s = smoothStep(0.0, 2.0, abs(d) - 1.0 );
 
-    let r = 0.02 * bah.x;
-    let d = sdRoundedBox(in.uv - mate.position,  bah / 2.0, float4(r,r,r,r));
-    let s = smoothStep(0.0, 2.0, abs(d) - 1.0 );
-
-    rect = mix(rect, float4(0.0, 0.0, 0.0, 1.0), 1.0 - s);
-
+        rect = mix(rect, float4(0.0, 0.0, 0.0, 1.0), 1.0 - s);
+    }
     /////////////////// contours /////////////////////////
 
-    // ////////////////////////// circles points //////////////////////////////////
-    let ann: bool = false;
-    let rad = 0.006 * mate.globals.zoom * 3.0;
-    // let rad2 = 0.002 * mate.globals.zoom *3.0;
-    // rect = draw_circle(rect, uv, rad, black, ann, float2(x_min, y_min));
-    // rect = draw_circle(rect, uv,  rad, black, ann, float2(x_max, y_min));
-    // rect = draw_circle(rect, uv,  rad, black, ann, float2(x_min, y_max));
-    // rect = draw_circle(rect, uv,  rad, black, ann, float2(x_max, y_max));
-
-    // let bm = 0.75;
-    // bluish = bluish * bm;
-    // bluish.w = 1.0;
-    // rect = draw_circle(rect, uv, rad2  , bluish, ann, float2(x_min, y_min));
-    // rect = draw_circle(rect, uv,  rad2 , bluish, ann, float2(x_max, y_min));
-    // rect = draw_circle(rect, uv,  rad2 , bluish, ann, float2(x_min, y_max));
-    // rect = draw_circle(rect, uv,  rad2 , bluish, ann, float2(x_max, y_max));
-    // bluish = bluish / bm;
-
-        // // test
-    
-    // ////////////////////////// Black points ///////////////////////////////////
 
 
     return rect;

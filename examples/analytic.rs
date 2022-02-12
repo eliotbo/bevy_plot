@@ -14,15 +14,15 @@ fn setup(mut commands: Commands, mut plots: ResMut<Assets<Plot>>) {
 
     let mut plot = Plot::default();
 
-    plot.canvas_position = Vec2::new(-100.0, -100.0);
-
+    // note that a closure would work as well
     plot.plot_analytical(easing_function);
 
     let plot_handle = plots.add(plot.clone());
     commands.spawn().insert(plot_handle);
 }
 
-pub fn easing_function(x: f32) -> f32 {
+// The function is not animated, so we don't use the time variable t.
+pub fn easing_function(x: f32, _t: f32) -> f32 {
     let start_point: Vec2 = Vec2::ZERO;
     let end_point: Vec2 = Vec2::splat(1.0);
     let y_min = start_point.y;

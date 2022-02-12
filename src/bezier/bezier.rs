@@ -31,10 +31,8 @@ use bevy::{
 
 use crate::plot::*;
 
-use crate::canvas::UpdateShadersEvent;
 use crate::util::*;
 
-// use flo_curves::*;
 use itertools_num::linspace;
 
 #[derive(Copy, Clone, Debug)]
@@ -64,31 +62,14 @@ impl Line {
     }
 }
 
-// pub struct SmoothCurvePlugin;
-
-// impl Plugin for SmoothCurvePlugin {
-//     fn build(&self, app: &mut App) {
-//         app.add_plugin(BezierMesh2dPlugin)
-//             .add_event::<SpawnBezierCurveEvent>()
-//             .add_system(spawn_bezier_function)
-//             .add_system(change_bezier_uni)
-//             .add_system(move_smooth_curve);
-//     }
-// }
-
-// pub struct SpawnBezierCurveEvent {
-//     pub canvas_handle: Handle<CanvasMaterial>,
-//     pub plot_handle: Handle<Plot>,
-// }
-
 // Compute derivatives at each point
-pub fn make_df(xs: &Vec<f32>, f: &fn(f32) -> f32) -> (Vec<Vec2>, Vec<Vec2>) {
+pub fn make_df(xs: &Vec<f32>, time: f32, f: &fn(f32, f32) -> f32) -> (Vec<Vec2>, Vec<Vec2>) {
     let delta = (xs[1] - xs[0]) / 1000.0;
 
     // derivatives
     let dfs = xs
         .iter()
-        .map(|x| Vec2::new(1.0, (f(x + delta) - f(x - delta)) / delta / 2.0))
+        .map(|x| Vec2::new(1.0, (f(x + delta, time) - f(x - delta, time)) / delta / 2.0))
         .collect::<Vec<Vec2>>();
 
     // normals
@@ -134,39 +115,108 @@ pub fn make_df(xs: &Vec<f32>, f: &fn(f32) -> f32) -> (Vec<Vec2>, Vec<Vec2>) {
     // return (dfs_vec2, ns_vec2);
 }
 
+#[derive(Component, Clone, AsStd140)]
+pub struct BezierCurveUniform {
+    pub mech: f32,
+    pub zoom: f32,
+    pub dummy: f32,
+    pub inner_canvas_size_in_pixels: Vec2,
+    pub canvas_position_in_pixels: Vec2,
+    pub color: Vec4,
+    pub size: f32,
+    pub style: i32,
+}
+
+pub fn update_bezier_uniform(
+    mut plots: ResMut<Assets<Plot>>,
+    mut bez_events: EventReader<UpdateBezierShaderEvent>,
+    mut query: Query<(&Handle<Plot>, &mut BezierCurveUniform)>,
+) {
+    for event in bez_events.iter() {
+        if let Ok(query_mut) = query.get_mut(event.entity) {
+            let (plot_handle, mut bezier_uniform) = query_mut;
+
+            let plot = plots.get_mut(plot_handle).unwrap();
+            plot.compute_zeros();
+
+            let bezier_curve = &plot.data.bezier_groups[event.group_number];
+
+            let bez_uni = bezier_uniform.as_mut();
+            *bez_uni = BezierCurveUniform {
+                mech: if bezier_curve.mech { 1.0 } else { 0.0 },
+                dummy: plot.bezier_dummy,
+                zoom: plot.globals.zoom,
+                inner_canvas_size_in_pixels: plot.canvas_size / (1.0 + plot.outer_border),
+                canvas_position_in_pixels: plot.canvas_position,
+                color: col_to_vec4(bezier_curve.color),
+                size: bezier_curve.size,
+                style: bezier_curve.line_style.clone().to_int32(),
+            };
+        }
+    }
+}
+
+pub struct SpawnBezierCurveEvent {
+    // pub canvas_handle: Handle<CanvasMaterial>,
+    pub group_number: usize,
+    pub plot_handle: Handle<Plot>,
+}
+
 pub fn spawn_bezier_function(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut plots: ResMut<Assets<Plot>>,
-    // mut spawn_beziercurve_event: EventReader<SpawnBezierCurveEvent>,
-    mut change_canvas_material_event: EventReader<UpdateShadersEvent>,
-    query: Query<(Entity, &BezierCurveUniform)>,
+    mut spawn_beziercurve_event: EventReader<SpawnBezierCurveEvent>,
+    // mut change_canvas_material_event: EventReader<RespawnAllEvent>,
+    // mut change_canvas_material_event: EventReader<RespawnAllEvent>,
+    query: Query<(Entity, &BezierCurveUniform, &BezierCurveNumber)>,
+    time: Res<Time>,
 ) {
     // for event in spawn_beziercurve_event.iter() {
-    for event in change_canvas_material_event.iter() {
+    for event in spawn_beziercurve_event.iter() {
         //
         if let Some(mut plot) = plots.get_mut(event.plot_handle.clone()) {
             //
             // remove all the bezier curves
-            // let mut maybe_bezier_uni = None;
-            for (entity, _bez_uni) in query.iter() {
-                // maybe_bezier_uni = Some();
-                commands.entity(entity).despawn();
+            // TODO: currently runs proportionally to curve_number^2. Optimize
+            for (entity, _bez_uni, curve_number) in query.iter() {
+                if curve_number.0 == event.group_number {
+                    commands.entity(entity).despawn();
+                }
             }
 
             let num_pts = plot.bezier_num_points;
             let xs_linspace = linspace(plot.bounds.lo.x, plot.bounds.up.x, num_pts);
             let xs = xs_linspace.into_iter().collect::<Vec<f32>>();
 
-            // plot_fn(&mut commands, &mut meshes, xs, &mut plot, |x| f(x));
+            plot_fn(
+                &mut commands,
+                &mut meshes,
+                xs,
+                event.group_number,
+                &mut plot,
+                &event.plot_handle,
+                &time,
+            );
+        }
+    }
+}
 
-            // println!("smooth: {:?}", plot.smooth_functions);
-            plot_fn(&mut commands, &mut meshes, xs, &mut plot);
-
-            // if let Some(plot_func) = plot.bezier_func {
-
-            //     plot_fn(&mut commands, &mut meshes, xs, &mut plot, plot_func);
-            // }
+pub fn animate_bezier(
+    mut event: EventWriter<SpawnBezierCurveEvent>,
+    plots: Res<Assets<Plot>>,
+    query: Query<(&Handle<Plot>, &BezierCurveNumber)>,
+) {
+    for (plot_handle, curve_number) in query.iter() {
+        if let Some(plot) = plots.get(plot_handle) {
+            if let Some(bezier_curve) = plot.data.bezier_groups.get(curve_number.0) {
+                if bezier_curve.show_animation {
+                    event.send(SpawnBezierCurveEvent {
+                        plot_handle: plot_handle.clone(),
+                        group_number: curve_number.0,
+                    });
+                }
+            }
         }
     }
 }
@@ -175,7 +225,10 @@ pub fn plot_fn(
     commands: &mut Commands,
     meshes: &mut ResMut<Assets<Mesh>>,
     xs: Vec<f32>,
+    curve_number: usize,
     plot: &mut Plot,
+    plot_handle: &Handle<Plot>,
+    time: &Res<Time>,
     // maybe_bezier_unifor: Option<BezierCurveUniform>,
     // f2: fn(f32) -> f32,
 ) {
@@ -183,10 +236,11 @@ pub fn plot_fn(
 
     plot.compute_zeros();
     // for func in plot.smooth_functions.iter() {
-    for bezier_plot in plot.data.bezier_groups.iter() {
-        // println!("Bezier");
-        let func = bezier_plot.function.clone();
-        // let color = bezier_plot.color;
+    // for (curve_number, bezier_curve) in plot.data.bezier_groups.iter().enumerate() {
+    // println!("Bezier");
+    if let Some(bezier_curve) = plot.data.bezier_groups.get(curve_number) {
+        let func = bezier_curve.function.clone();
+        // let color = bezier_curve.color;
 
         let num_pts = plot.bezier_num_points;
 
@@ -195,14 +249,15 @@ pub fn plot_fn(
         //     .map(|x| Vec2::new(*x, f2(*x)))
         //     .collect::<Vec<Vec2>>();
 
+        let t = time.seconds_since_startup() as f32;
         let ys = xs
             .iter()
-            .map(|x| Vec2::new(*x, func(*x)))
+            .map(|x| Vec2::new(*x, func(*x, t)))
             .collect::<Vec<Vec2>>();
 
         let ys_world = ys.iter().map(|y| plot.to_local(*y)).collect::<Vec<Vec2>>();
 
-        let (dys, _) = make_df(&xs, &func);
+        let (dys, _) = make_df(&xs, t, &func);
 
         let dys_p_ys = dys
             .iter()
@@ -277,8 +332,6 @@ pub fn plot_fn(
                 let line1 = Line(ys_world[k + 1], dys_p_ys_world[k + 1]);
                 let intersection = line1.intersect(line0).unwrap();
 
-                // println!("intersection: {:?}", intersection);
-
                 let control_point = intersection;
 
                 mesh_attr_controls.push([control_point.x, control_point.y, is_last, is_last]);
@@ -286,10 +339,7 @@ pub fn plot_fn(
                 mesh_attr_controls.push([control_point.x, control_point.y, is_last, is_last]);
                 mesh_attr_controls.push([control_point.x, control_point.y, is_last, is_last]);
 
-                // controls.push(intersection.clone());
                 controls.push(control_point);
-
-                // println!("control_point {:?}", control_point);
 
                 ends.push([
                     ys_world[k].x,
@@ -376,39 +426,32 @@ pub fn plot_fn(
                 BezierMesh2d::default(),
                 Mesh2dHandle(meshes.add(mesh)),
                 GlobalTransform::default(),
-                Transform::from_translation(plot.canvas_position.extend(1.3)),
+                Transform::from_translation(plot.canvas_position.extend(1.10)),
                 // Transform::from_translation(Vec3::new(0.0, 0.0, 3.0)),
                 Visibility::default(),
                 ComputedVisibility::default(),
             ))
+            .insert(BezierCurveNumber(curve_number))
+            .insert(plot_handle.clone())
             .insert(BezierCurveUniform {
-                mech: if bezier_plot.mech { 1.0 } else { 0.0 },
-                left: 1.0,
-                zoom: 1.0,
+                mech: if bezier_curve.mech { 1.0 } else { 0.0 },
+                dummy: plot.bezier_dummy,
+                zoom: plot.globals.zoom,
                 inner_canvas_size_in_pixels: plot.canvas_size / (1.0 + plot.outer_border),
                 canvas_position_in_pixels: plot.canvas_position,
-                color: col_to_vec4(bezier_plot.color),
-                size: bezier_plot.size,
-                style: bezier_plot.line_style.clone().to_int32(),
+                color: col_to_vec4(bezier_curve.color),
+                size: bezier_curve.size,
+                style: bezier_curve.line_style.clone().to_int32(),
             });
     }
 }
 
+#[derive(Component)]
+pub struct BezierCurveNumber(pub usize);
+
 /// A marker component for colored 2d meshes
 #[derive(Component, Default)]
 pub struct BezierMesh2d;
-
-#[derive(Component, Clone, AsStd140)]
-pub struct BezierCurveUniform {
-    pub mech: f32,
-    pub zoom: f32,
-    pub left: f32,
-    pub inner_canvas_size_in_pixels: Vec2,
-    pub canvas_position_in_pixels: Vec2,
-    pub color: Vec4,
-    pub size: f32,
-    pub style: i32,
-}
 
 pub struct BezierMesh2dPipeline {
     pub view_layout: BindGroupLayout,

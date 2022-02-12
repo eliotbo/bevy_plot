@@ -13,7 +13,7 @@ type float2 = vec2<f32>;
 struct BezierCurveUniform {
     mech: f32;
     zoom: f32;
-    left: f32;
+    dummy: f32;
     inner_canvas_size_in_pixels: float2;
     canvas_position_in_pixels: float2;
     color: float4;
@@ -198,8 +198,10 @@ fn tips(uv: float2, m_in: float4, dy: float2, solid: f32, w: f32 ) -> float4 {
 [[stage(fragment)]]
 fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
     let width = bez_uni.size / 1.0;
-    let w = 1.0 + width * bez_uni.zoom  * 1.0;
-    let solid = width * bez_uni.zoom ;
+    // let w = 1.0 + width * bez_uni.zoom  * 1.0;
+    // let solid = width * bez_uni.zoom ;
+    let w = 1.0 + width  * 1.0;
+    let solid = width ;
 
     // var out_col = float4(0.2, 0.3, 0.8, 1.00);
     var out_col = bez_uni.color;
@@ -258,7 +260,7 @@ fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
             }
             let dy = normalize(p1 - control);
             let dc = sdCircle(in.uv, p1 + dy *  width * 2.12 * artifact , w);
-            // let dc = sdCircle(in.uv, p1 + dy *  width * bez_uni.left * 2.12 * artifact , w);
+            // let dc = sdCircle(in.uv, p1 + dy *  width * bez_uni.dummy * 2.12 * artifact , w);
 
            let sc = smoothStep(solid, w * 0.9 *0.5 + solid , dc);
            

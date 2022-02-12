@@ -11,10 +11,10 @@ use crate::inputs::*;
 
 // use crate::plot_canvas_plugin::UpdateShadersEvent;
 
-use crate::canvas::UpdateShadersEvent;
+use crate::canvas::RespawnAllEvent;
 use crate::util::*;
 
-// use crate::bezier::*;
+use crate::bezier::*;
 use crate::plot::*;
 
 fn spawn_axis_tick_labels(
@@ -79,45 +79,69 @@ pub fn update_target(
         let plot_entity = event.canvas_entity;
         // if let Some(plot) = materials.get_mut(plot_handle.clone()) {
         if let Some(plot) = plots.get_mut(plot_handle.clone()) {
-            let text_z_plane = 1.0001;
-            let font_size = 16.0;
-
-            let pos = plot.target_position;
-
-            let target_str_x = format_numeric_label(&plot, pos.x, pos.x > 1000.0 || pos.x < 0.01);
-            let target_str_y = format_numeric_label(&plot, pos.y, pos.y > 1000.0 || pos.y < 0.01);
-
-            let target_str = format!("({}, {})", target_str_x, target_str_y);
-
-            let offset = font_size * 0.2;
-            let target_position = plot.to_local(plot.target_position).extend(text_z_plane)
-                + Vec3::new(offset, offset, 0.0);
-
+            //
+            // update canvas shader
             if let Some(canvas_mat) = canvas_materials.get_mut(&event.canvas_material_handle) {
                 canvas_mat.update_all(&plot);
             }
 
-            let font = asset_server.load("fonts/Roboto-Regular.ttf");
-            let text_style = TextStyle {
-                font,
-                font_size,
-                color: plot.target_label_color,
-            };
-            let text_alignment = TextAlignment {
-                vertical: VerticalAlign::Bottom,
-                horizontal: HorizontalAlign::Left,
-            };
+            if plot.show_target && plot.target_toggle {
+                let target_text_z_plane = 1.2;
+                let font_size = 16.0;
 
-            let label_entity = commands
-                .spawn_bundle(Text2dBundle {
-                    text: Text::with_section(target_str, text_style.clone(), text_alignment),
-                    transform: Transform::from_translation(target_position),
-                    ..Default::default()
-                })
-                .insert(TargetLabel)
-                .id();
+                let pos = plot.target_position;
 
-            commands.entity(plot_entity).push_children(&[label_entity]);
+                let target_str_x =
+                    format_numeric_label(&plot, pos.x, pos.x > 1000.0 || pos.x < 0.01);
+                let target_str_y =
+                    format_numeric_label(&plot, pos.y, pos.y > 1000.0 || pos.y < 0.01);
+
+                let target_str = format!("({}, {})", target_str_x, target_str_y);
+
+                let offset = font_size * 0.2;
+                let mut target_position = plot
+                    .to_local(plot.target_position)
+                    .extend(target_text_z_plane)
+                    + Vec3::new(offset, offset, 0.0);
+
+                let font = asset_server.load("fonts/Roboto-Regular.ttf");
+                let text_style = TextStyle {
+                    font,
+                    font_size,
+                    color: plot.target_label_color,
+                };
+                let mut text_alignment = TextAlignment {
+                    vertical: VerticalAlign::Bottom,
+                    horizontal: HorizontalAlign::Left,
+                };
+
+                let upper_limits = plot.canvas_position + plot.canvas_size / 2.0;
+                let lower_limits = plot.canvas_position - plot.canvas_size / 2.0;
+
+                if target_position.x > upper_limits.x - font_size * 1.0 {
+                    text_alignment.horizontal = HorizontalAlign::Right;
+                    target_position.x -= font_size * 0.4;
+                }
+
+                if !(target_position.y > upper_limits.y - font_size * 1.2
+                    || target_position.y < lower_limits.y + font_size * 0.2)
+                {
+                    let label_entity = commands
+                        .spawn_bundle(Text2dBundle {
+                            text: Text::with_section(
+                                target_str,
+                                text_style.clone(),
+                                text_alignment,
+                            ),
+                            transform: Transform::from_translation(target_position),
+                            ..Default::default()
+                        })
+                        .insert(TargetLabel)
+                        .id();
+
+                    commands.entity(plot_entity).push_children(&[label_entity]);
+                }
+            }
         }
     }
 }
@@ -133,200 +157,187 @@ pub fn update_plot_labels(
 ) {
     // If there is a stack of UpdatePlotLabelsEvent, only read the first one.
     if let Some(event) = update_plot_labels_event.iter().next() {
-        for entity in plot_label_query.iter() {
-            commands.entity(entity).despawn();
-        }
-        let graph_sprite = canvas_query.get_mut(event.canvas_entity).unwrap();
-
-        let size = graph_sprite.original_size;
-
         let plot_handle = event.plot_handle.clone();
-        let plot_entity = event.canvas_entity;
+
         // if let Some(plot) = materials.get_mut(plot_handle.clone()) {
+
         if let Some(plot) = plots.get_mut(plot_handle.clone()) {
-            let font_size = 16.0;
+            if !plot.hide_tick_labels {
+                for entity in plot_label_query.iter() {
+                    commands.entity(entity).despawn();
+                }
+                let plot_entity = event.canvas_entity;
 
-            // TODO: clean this up using to_local inside the Plot struct
-            let graph_y = size.y / (1. + plot.outer_border.y);
-            let graph_x = size.x / (1. + plot.outer_border.x);
+                let graph_sprite = canvas_query.get_mut(event.canvas_entity).unwrap();
 
-            let x_edge = size.x / (1. + plot.outer_border.x) / 2.0;
-            let y_edge = size.y / (1. + plot.outer_border.y) / 2.0;
+                let size = graph_sprite.original_size;
 
-            let x_range = plot.bounds.up.x - plot.bounds.lo.x;
-            let y_range = plot.bounds.up.y - plot.bounds.lo.y;
+                let font_size = 16.0;
 
-            let text_z_plane = 1.0001;
+                // TODO: clean this up using to_local inside the Plot struct
+                let graph_y = size.y / (1. + plot.outer_border.y);
+                let graph_x = size.x / (1. + plot.outer_border.x);
 
-            // ///////////////////////////// target ///////////////////////////////
-            // let target_str = "0.0";
-            // let target_position = plot.to_local(plot.plot_coordl_mouse_pos).extend(text_z_plane);
+                let x_edge = size.x / (1. + plot.outer_border.x) / 2.0;
+                let y_edge = size.y / (1. + plot.outer_border.y) / 2.0;
 
-            // spawn_axis_tick_labels(
-            //     &mut commands,
-            //     &asset_server,
-            //     plot_entity,
-            //     &target_str,
-            //     font_size,
-            //     // Vec2::new(x0 + x_pos + font_offset_x, center_dist_y).extend(text_z_plane),
-            //     target_position,
-            //     VerticalAlign::Top,
-            //     HorizontalAlign::Right,
-            //     plot.tick_label_color,
-            // );
-            // ///////////////////////////// target ///////////////////////////////
+                let x_range = plot.bounds.up.x - plot.bounds.lo.x;
+                let y_range = plot.bounds.up.y - plot.bounds.lo.y;
 
-            ///////////////////////////// x_axis labels  /////////////////////////////
-            {
-                // distance from center for
-                let center_dist_y = -graph_y / 2.0 + font_size * 1.0;
+                let text_z_plane = 1.0001;
 
-                // iterate
-                let iter_x = x_edge * 2.0 / x_range;
+                ///////////////////////////// x_axis labels  /////////////////////////////
+                {
+                    // distance from center for
+                    let center_dist_y = -graph_y / 2.0 + font_size * 1.0;
 
-                // integer corresponding to lowest x tick
-                let bottom_x = (plot.bounds.lo.x / plot.tick_period.x).abs().floor() as i64
-                    * (plot.bounds.lo.x).signum() as i64;
+                    // iterate
+                    let iter_x = x_edge * 2.0 / x_range;
 
-                // integer corresponding to highest x tick
-                let top_x = (plot.bounds.up.x / plot.tick_period.x).abs().floor() as i64
-                    * (plot.bounds.up.x).signum() as i64;
+                    // integer corresponding to lowest x tick
+                    let bottom_x = (plot.bounds.lo.x / plot.tick_period.x).abs().floor() as i64
+                        * (plot.bounds.lo.x).signum() as i64;
 
-                let max_abs_x = (plot.tick_period.x * bottom_x as f32)
-                    .abs()
-                    .max(plot.tick_period.x * top_x as f32);
+                    // integer corresponding to highest x tick
+                    let top_x = (plot.bounds.up.x / plot.tick_period.x).abs().floor() as i64
+                        * (plot.bounds.up.x).signum() as i64;
 
-                for i in bottom_x..(top_x + 1) {
-                    if plot.hide_half_ticks && (i % 2).abs() == 1 {
-                        continue;
-                    }
-                    // // let j = i;
+                    let max_abs_x = (plot.tick_period.x * bottom_x as f32)
+                        .abs()
+                        .max(plot.tick_period.x * top_x as f32);
 
-                    // let mut x_str = format!(
-                    //     "{:.1$}",
-                    //     i as f32 * plot.tick_period.x,
-                    //     plot.significant_digits
-                    // );
+                    for i in bottom_x..(top_x + 1) {
+                        if plot.hide_half_ticks && (i % 2).abs() == 1 {
+                            continue;
+                        }
+                        // // let j = i;
 
-                    // // scientific notation if the numbers are larger than 1000
-                    // if max_abs_x >= 1000.0 || max_abs_x < 0.01 {
-                    //     // x_str = format!("{:+e}", i as f32 * plot.tick_period.x);
-                    //     x_str = format!(
-                    //         "{:+.1$e}",
-                    //         i as f32 * plot.tick_period.x,
-                    //         plot.significant_digits
-                    //     );
-                    //     if let Some(rest) = x_str.strip_prefix("+") {
-                    //         x_str = rest.to_string();
-                    //     }
-                    // }
+                        // let mut x_str = format!(
+                        //     "{:.1$}",
+                        //     i as f32 * plot.tick_period.x,
+                        //     plot.significant_digits
+                        // );
 
-                    let x_str = format_numeric_label(
-                        &plot,
-                        i as f32 * plot.tick_period.x,
-                        max_abs_x >= 1000.0 || max_abs_x < 0.01,
-                    );
+                        // // scientific notation if the numbers are larger than 1000
+                        // if max_abs_x >= 1000.0 || max_abs_x < 0.01 {
+                        //     // x_str = format!("{:+e}", i as f32 * plot.tick_period.x);
+                        //     x_str = format!(
+                        //         "{:+.1$e}",
+                        //         i as f32 * plot.tick_period.x,
+                        //         plot.significant_digits
+                        //     );
+                        //     if let Some(rest) = x_str.strip_prefix("+") {
+                        //         x_str = rest.to_string();
+                        //     }
+                        // }
 
-                    // leftmost position on the x axis
-                    let x0 = x_edge * (-1.0 - plot.bounds.lo.x * 2.0 / x_range);
+                        let x_str = format_numeric_label(
+                            &plot,
+                            i as f32 * plot.tick_period.x,
+                            max_abs_x >= 1000.0 || max_abs_x < 0.01,
+                        );
 
-                    // iterator for each label
-                    let x_pos = iter_x * i as f32 * plot.tick_period.x;
+                        // leftmost position on the x axis
+                        let x0 = x_edge * (-1.0 - plot.bounds.lo.x * 2.0 / x_range);
 
-                    let font_offset_x = -font_size * 0.2;
-                    // if the tick label is too far to the left, do not spawn it
-                    if (x0 + x_pos + font_offset_x + graph_x / 2.0) > font_size * 3.0
+                        // iterator for each label
+                        let x_pos = iter_x * i as f32 * plot.tick_period.x;
+
+                        let font_offset_x = -font_size * 0.2;
+                        // if the tick label is too far to the left, do not spawn it
+                        if (x0 + x_pos + font_offset_x + graph_x / 2.0) > font_size * 3.0
                         // if the tick label is too right to the left, do not spawn it
                         && (x0 + x_pos + font_offset_x - graph_x / 2.0) < -font_size * 0.0
-                    {
-                        spawn_axis_tick_labels(
-                            &mut commands,
-                            &asset_server,
-                            plot_entity,
-                            &x_str,
-                            font_size,
-                            Vec2::new(x0 + x_pos + font_offset_x, center_dist_y)
-                                .extend(text_z_plane),
-                            VerticalAlign::Top,
-                            HorizontalAlign::Right,
-                            plot.tick_label_color,
-                        );
+                        {
+                            spawn_axis_tick_labels(
+                                &mut commands,
+                                &asset_server,
+                                plot_entity,
+                                &x_str,
+                                font_size,
+                                Vec2::new(x0 + x_pos + font_offset_x, center_dist_y)
+                                    .extend(text_z_plane),
+                                VerticalAlign::Top,
+                                HorizontalAlign::Right,
+                                plot.tick_label_color,
+                            );
+                        }
                     }
                 }
-            }
 
-            ////////////////////////////////// y_axis labels //////////////////////////////////
-            {
-                // distance from center for
-                let center_dist_x = -graph_x / 2.0 + font_size * 0.2;
+                ////////////////////////////////// y_axis labels //////////////////////////////////
+                {
+                    // distance from center for
+                    let center_dist_x = -graph_x / 2.0 + font_size * 0.2;
 
-                // iterate
-                let iter_y = y_edge * 2.0 / y_range;
+                    // iterate
+                    let iter_y = y_edge * 2.0 / y_range;
 
-                // integer corresponding to lowest y tick
-                let bottom_y = (plot.bounds.lo.y / plot.tick_period.y).abs().floor() as i64
-                    * (plot.bounds.lo.y).signum() as i64;
+                    // integer corresponding to lowest y tick
+                    let bottom_y = (plot.bounds.lo.y / plot.tick_period.y).abs().floor() as i64
+                        * (plot.bounds.lo.y).signum() as i64;
 
-                // integer corresponding to highest y tick
-                let top_y = (plot.bounds.up.y / plot.tick_period.y).abs().floor() as i64
-                    * (plot.bounds.up.y).signum() as i64;
+                    // integer corresponding to highest y tick
+                    let top_y = (plot.bounds.up.y / plot.tick_period.y).abs().floor() as i64
+                        * (plot.bounds.up.y).signum() as i64;
 
-                let max_abs_y = (plot.tick_period.y * bottom_y as f32)
-                    .abs()
-                    .max(plot.tick_period.y * top_y as f32);
+                    let max_abs_y = (plot.tick_period.y * bottom_y as f32)
+                        .abs()
+                        .max(plot.tick_period.y * top_y as f32);
 
-                for i in bottom_y..top_y + 1 {
-                    if plot.hide_half_ticks && (i % 2).abs() == 1 {
-                        continue;
-                    }
+                    for i in bottom_y..top_y + 1 {
+                        if plot.hide_half_ticks && (i % 2).abs() == 1 {
+                            continue;
+                        }
 
-                    // let mut y_str = format!(
-                    //     "{:.1$}",
-                    //     i as f32 * plot.tick_period.y,
-                    //     plot.significant_digits
-                    // );
+                        // let mut y_str = format!(
+                        //     "{:.1$}",
+                        //     i as f32 * plot.tick_period.y,
+                        //     plot.significant_digits
+                        // );
 
-                    // // scientific notation if the numbers are larger than 1000
-                    // if max_abs_y >= 1000.0 || max_abs_y < 0.01 {
-                    //     y_str = format!(
-                    //         "{:+.1$e}",
-                    //         i as f32 * plot.tick_period.y,
-                    //         plot.significant_digits
-                    //     );
-                    //     if let Some(rest) = y_str.strip_prefix("+") {
-                    //         y_str = rest.to_string();
-                    //     }
-                    // }
+                        // // scientific notation if the numbers are larger than 1000
+                        // if max_abs_y >= 1000.0 || max_abs_y < 0.01 {
+                        //     y_str = format!(
+                        //         "{:+.1$e}",
+                        //         i as f32 * plot.tick_period.y,
+                        //         plot.significant_digits
+                        //     );
+                        //     if let Some(rest) = y_str.strip_prefix("+") {
+                        //         y_str = rest.to_string();
+                        //     }
+                        // }
 
-                    let y_str = format_numeric_label(
-                        &plot,
-                        i as f32 * plot.tick_period.y,
-                        // scientific notation if the numbers are larger than 1000 or smaller than 0.01
-                        max_abs_y >= 1000.0 || max_abs_y < 0.01,
-                    );
-
-                    // leftmost position on the x axis
-                    let y0 = y_edge * (-1.0 - plot.bounds.lo.y * 2.0 / y_range);
-
-                    // iterator for each label
-                    let y_pos = iter_y * i as f32 * plot.tick_period.y;
-
-                    let font_offset_y = -font_size * 0.1;
-
-                    if (y0 + y_pos + font_offset_y + graph_y / 2.0) > font_size * 1.2
-                        && (y0 + y_pos + font_offset_y - graph_y / 2.0) < -font_size * 0.0
-                    {
-                        spawn_axis_tick_labels(
-                            &mut commands,
-                            &asset_server,
-                            plot_entity,
-                            &y_str,
-                            font_size,
-                            Vec2::new(center_dist_x, y0 + y_pos + font_offset_y).extend(0.0001),
-                            VerticalAlign::Top,
-                            HorizontalAlign::Left,
-                            plot.tick_label_color,
+                        let y_str = format_numeric_label(
+                            &plot,
+                            i as f32 * plot.tick_period.y,
+                            // scientific notation if the numbers are larger than 1000 or smaller than 0.01
+                            max_abs_y >= 1000.0 || max_abs_y < 0.01,
                         );
+
+                        // leftmost position on the x axis
+                        let y0 = y_edge * (-1.0 - plot.bounds.lo.y * 2.0 / y_range);
+
+                        // iterator for each label
+                        let y_pos = iter_y * i as f32 * plot.tick_period.y;
+
+                        let font_offset_y = -font_size * 0.1;
+
+                        if (y0 + y_pos + font_offset_y + graph_y / 2.0) > font_size * 1.2
+                            && (y0 + y_pos + font_offset_y - graph_y / 2.0) < -font_size * 0.0
+                        {
+                            spawn_axis_tick_labels(
+                                &mut commands,
+                                &asset_server,
+                                plot_entity,
+                                &y_str,
+                                font_size,
+                                Vec2::new(center_dist_x, y0 + y_pos + font_offset_y).extend(0.0001),
+                                VerticalAlign::Top,
+                                HorizontalAlign::Left,
+                                plot.tick_label_color,
+                            );
+                        }
                     }
                 }
             }
@@ -359,9 +370,9 @@ pub fn spawn_graph(
     // asset_server: Res<AssetServer>,
     // mut update_labels_event: EventWriter<UpdatePlotLabelsEvent>,
     // mut spawn_markers_event: EventWriter<SpawnMarkersEvent>,
-    // mut spawn_beziercurve_event: EventWriter<SpawnBezierCurveEvent>,
+    mut spawn_beziercurve_event: EventWriter<SpawnBezierCurveEvent>,
     mut wait_for_update_labels_event: EventWriter<WaitForUpdatePlotLabelsEvent>,
-    mut change_canvas_material_event: EventWriter<UpdateShadersEvent>,
+    mut change_canvas_material_event: EventWriter<RespawnAllEvent>,
 ) {
     for event in spawn_graph_event.iter() {
         let plot_handle = event.plot_handle.clone();
@@ -371,15 +382,13 @@ pub fn spawn_graph(
 
         let canvas_material_handle = materials.add(material);
 
-        println!("{:?}", "SPAWNING graphshapgraph");
-
         // quad
         let plot_entity = commands
             .spawn()
             .insert_bundle(MaterialMesh2dBundle {
                 mesh: Mesh2dHandle(meshes.add(Mesh::from(shape::Quad::new(plot.canvas_size)))),
                 material: canvas_material_handle.clone(),
-                transform: Transform::from_translation(plot.canvas_position.extend(0.0)),
+                transform: Transform::from_translation(plot.canvas_position.extend(0.0001)),
                 ..Default::default()
             })
             .insert(event.canvas.clone())
@@ -391,16 +400,22 @@ pub fn spawn_graph(
             plot_handle: plot_handle.clone(),
         });
 
-        change_canvas_material_event.send(UpdateShadersEvent {
+        change_canvas_material_event.send(RespawnAllEvent {
             canvas_material_handle: canvas_material_handle.clone(),
             plot_handle: plot_handle.clone(),
         });
 
-        // // TODO after tests: remove this
-        // spawn_beziercurve_event.send(SpawnBezierCurveEvent {
-        //     canvas_handle: canvas_material_handle,
-        //     plot_handle,
-        // });
+        // spawn each analytical curve
+        plot.data
+            .bezier_groups
+            .iter()
+            .enumerate()
+            .for_each(|(k, _)| {
+                spawn_beziercurve_event.send(SpawnBezierCurveEvent {
+                    group_number: k,
+                    plot_handle: plot_handle.clone(),
+                })
+            });
     }
 }
 fn format_numeric_label(plot: &Plot, label: f32, scientific_notation: bool) -> String {
@@ -439,6 +454,9 @@ pub fn update_mouse_target(
 
                     // let mouse_plot = plot.world_to_plot(cursor.position);
                     // canvas_material.mouse_pos = mouse_plot;
+                    if mouse_button_input.just_pressed(MouseButton::Middle) {
+                        plot.target_toggle = !plot.target_toggle;
+                    }
 
                     if canvas_material.within_rect(cursor.position) {
                         // canvas_material.mouse_pos = cursor.position;
@@ -480,7 +498,7 @@ pub fn change_plot(
     mut update_plot_labels_event: EventWriter<UpdatePlotLabelsEvent>,
     mut update_target_labels_event: EventWriter<UpdateTargetLabelEvent>,
     mut windows: ResMut<Windows>,
-    mut change_canvas_material_event: EventWriter<UpdateShadersEvent>,
+    // mut change_canvas_material_event: EventWriter<UpdateShadersEvent>,
 ) {
     for (canvas_entity, graph_sprite, plot_handle, canvas_material_handle) in canvas_query.iter() {
         // println!("{:?}", "CHANGING SHADER");
@@ -684,8 +702,9 @@ pub fn adjust_graph_axes(
     // mut cursor: ResMut<Cursor>,
     mut mouse_motion_events: EventReader<MouseMotion>,
     mut update_plot_labels_event: EventWriter<UpdatePlotLabelsEvent>,
-    mut change_canvas_material_event: EventWriter<UpdateShadersEvent>,
+    mut change_canvas_material_event: EventWriter<RespawnAllEvent>,
     mut update_target_labels_event: EventWriter<UpdateTargetLabelEvent>,
+    mut spawn_beziercurve_event: EventWriter<SpawnBezierCurveEvent>,
 ) {
     let delta_pixels_vec = mouse_motion_events
         .iter()
@@ -713,10 +732,25 @@ pub fn adjust_graph_axes(
                     canvas_material_handle: material_handle.clone(),
                 });
 
-                change_canvas_material_event.send(UpdateShadersEvent {
+                change_canvas_material_event.send(RespawnAllEvent {
                     plot_handle: plot_handle.clone(),
                     canvas_material_handle: material_handle.clone(),
                 });
+
+                plot.data
+                    .bezier_groups
+                    .iter()
+                    .enumerate()
+                    .for_each(|(k, _)| {
+                        let bezier_curve = plot.data.bezier_groups.get(k).unwrap();
+                        // So as to not spawn twice when show_animation is turned on
+                        if !bezier_curve.show_animation {
+                            spawn_beziercurve_event.send(SpawnBezierCurveEvent {
+                                group_number: k,
+                                plot_handle: plot_handle.clone(),
+                            })
+                        }
+                    });
 
                 // }
             }
@@ -746,11 +780,26 @@ pub fn adjust_graph_axes(
                 canvas_entity,
                 canvas_material_handle: material_handle.clone(),
             });
+
+            plot.data
+                .bezier_groups
+                .iter()
+                .enumerate()
+                .for_each(|(k, _)| {
+                    let bezier_curve = plot.data.bezier_groups.get(k).unwrap();
+                    // So as to not spawn twice when show_animation is turned on
+                    if !bezier_curve.show_animation {
+                        spawn_beziercurve_event.send(SpawnBezierCurveEvent {
+                            group_number: k,
+                            plot_handle: plot_handle.clone(),
+                        })
+                    }
+                });
         }
 
         commands.entity(canvas_entity).remove::<ZoomAxes>();
 
-        change_canvas_material_event.send(UpdateShadersEvent {
+        change_canvas_material_event.send(RespawnAllEvent {
             plot_handle: plot_handle.clone(),
             canvas_material_handle: material_handle.clone(),
         });

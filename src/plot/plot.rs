@@ -15,6 +15,16 @@ use crate::segments::*;
 
 pub struct PlotPlugin;
 
+// z planes from bottom to top:
+
+// canvas: 0.0001
+// text and labels: 1.0001
+// bezier 1.10
+// segments: 1.11
+// markers: 1.12
+// target text: 1.2
+
+
 impl Plugin for PlotPlugin {
     fn build(&self, app: &mut App) {
         app
@@ -26,31 +36,33 @@ impl Plugin for PlotPlugin {
             .add_event::<SpawnGraphEvent>()
             .add_event::<ReleaseAllEvent>()
             .add_event::<UpdatePlotLabelsEvent>()
-            .add_event::<UpdateShadersEvent>()
+            .add_event::<RespawnAllEvent>()
             .add_event::<WaitForUpdatePlotLabelsEvent>()
             .add_event::<UpdateTargetLabelEvent>()
-            // .add_event::<SpawnBezierCurveEvent>()
+            .add_event::<UpdateBezierShaderEvent>()
+            .add_event::<SpawnBezierCurveEvent>()
             .add_asset::<Plot>()
             .insert_resource(make_color_palette())
             .insert_resource(Cursor::default())
 
             .add_system_set(
-                SystemSet::new().label("model").before("updates")             
+                SystemSet::new().label("model").before("shader_updates")             
                 .with_system(adjust_graph_axes)
                 .with_system(change_plot)
                 
             )
 
             .add_system_set(
-                SystemSet::new().label("updates")
-                .with_system(update_canvas_material)
+                SystemSet::new().label("shader_updates")
+                // .with_system(update_canvas_material)
+                .with_system(update_bezier_uniform)
                 .with_system(spawn_bezier_function)
                 .with_system(wait_for_graph_spawn)
                 
             )
        
             .add_system_set(
-                SystemSet::new().label("other").after("updates")
+                SystemSet::new().label("other").after("shader_updates")
                 .with_system(release_all)
                 .with_system(spawn_graph)
                 .with_system(adjust_graph_size)
@@ -62,6 +74,7 @@ impl Plugin for PlotPlugin {
                 .with_system(update_plot_labels)
                 .with_system(update_target)
                 .with_system(do_spawn_plot)
+                .with_system(animate_bezier)
             )
             .add_system(markers_setup.exclusive_system().at_end())
             .add_system(segments_setup.exclusive_system().at_end())
@@ -97,6 +110,11 @@ fn do_spawn_plot(
     }
 }
 
+pub struct UpdateBezierShaderEvent {
+    pub plot_handle: Handle<Plot>,
+    pub entity: Entity,
+    pub group_number: usize,
+}
 
 
 pub struct WaitForUpdatePlotLabelsEvent {
@@ -131,26 +149,28 @@ impl Default for PlotGlobals {
 #[derive(Debug, Clone)]
 // struct containing the data to be plotted and the color of the curves
 pub struct BezierData {
-    pub function: fn(f32) -> f32,
+    pub function: fn(f32, f32) -> f32,
+
     pub size: f32,
     pub line_style: LineStyle,
     pub draw_contour: bool,
     pub color: Color,
     pub mech: bool,
     pub num_points: usize,
+    pub show_animation: bool,
 }
 
 impl Default for BezierData {
     fn default() -> Self {
         BezierData {
-            // data: vec![],
-            function: |x: f32| x, // Vec<fn(f32) -> f32>,
+            function: |x: f32, _t: f32| x, // Vec<fn(f32) -> f32>,
             color: Color::rgb(0.2, 0.3, 0.8),
             size: 1.0,
             line_style: LineStyle::Solid,
             draw_contour: false,
             mech: false,
             num_points: 256,
+            show_animation: false,
         }
     }
 }
@@ -297,6 +317,7 @@ pub enum Opt {
     
     /// Works with plotopt_analytical() only.
     NumPoints(usize),
+    Animate(bool),
 
     /// Use with plotopt() exclusively.
     MarkerColor(Color),
@@ -330,19 +351,31 @@ pub struct Plot {
     pub(crate) bounds: PlotCanvasBounds,
     pub globals: PlotGlobals,
     pub canvas_position: Vec2,
+    // pub canvas_bs_color : Color, 
     pub outer_border: Vec2,
     pub canvas_size: Vec2,
+    pub background_color1: Color,
+    pub background_color2: Color,
+    pub show_grid: bool,
     pub zero_world: Vec2,
+
+    pub hide_contour: bool,
+    pub hide_tick_labels: bool,
     pub hide_half_ticks: bool,
     pub significant_digits: usize,
     pub show_target: bool,
+    pub show_axes: bool,
+    pub(crate) target_toggle: bool,
     pub tick_label_color: Color,
     pub target_label_color: Color,
+    pub target_color: Color,
     pub target_position: Vec2,
     pub target_significant_digits: usize,
 
     /// Only related to the plot_analytical() and plotopt_analytical() functions
     pub bezier_num_points: usize,
+    pub bezier_dummy: f32,
+
 
 
     // mouse_pos in the reference frame of the graph, corresponding to its axes coordinates
@@ -369,25 +402,34 @@ impl Default for Plot {
             },
 
             globals: PlotGlobals {
-                time: 0.0,
+                time: 0.0, // unused
                 zoom: 1.0,
-                dum1: 0.0, // for future use
-                dum2: 0.0, // for future use
+                dum1: 0.0, // (for tests only)
+                dum2: 0.0, // (for tests only)
             },
+
+            show_grid: true,
+            background_color1: Color::rgba(0.048, 0.00468, 0.0744, 1.0) ,
+            background_color2: Color::rgba(0.0244, 0.0023, 0.0372, 1.0) ,
 
             canvas_size: size.clone(),
             outer_border: Vec2::new(0.03 * size.y / size.x, 0.03),
             zero_world: Vec2::new(0.0, 0.0),
+
+            hide_contour: false,
+            hide_tick_labels: false,
             hide_half_ticks: true,
             significant_digits: 2,
+            show_axes: true,
             show_target: false,
+            target_toggle: false,
             tick_label_color: Color::BLACK,
             target_label_color: Color::GRAY,
+            target_color: Color::GRAY,
             target_position: Vec2::new(0.0, 0.0),
             target_significant_digits: 2,
 
-            // position: Vec2::new(65.0, 28.0) * 1.,
-            // smooth_functions: Vec::new(),
+
 
             canvas_position: Vec2::ZERO,
 
@@ -396,6 +438,8 @@ impl Default for Plot {
             options: PlotOptions { plot_type: None },
 
             bezier_num_points: 100,
+            bezier_dummy: 0.0,
+
 
             send_plot_event: SendPlotEvent {
                 markers: false,
@@ -514,7 +558,7 @@ impl Plot {
     }
 
     /// Plot a function by providing said function.
-    pub fn plot_analytical(&mut self, f: fn(f32) -> f32) {
+    pub fn plot_analytical(&mut self, f: fn(f32, f32) -> f32) {
         //
         let new_data = BezierData {
             function: f,
@@ -527,7 +571,7 @@ impl Plot {
     }
 
     /// Plot a function by providing said function and options.
-    pub fn plotopt_analytical(&mut self, f: fn(f32) -> f32, options: Vec<Opt>) {
+    pub fn plotopt_analytical(&mut self, f: fn(f32, f32) -> f32, options: Vec<Opt>) {
         //
         let mut data = BezierData {
             function: f,
@@ -545,6 +589,8 @@ impl Plot {
                 Opt::LineStyle(style)=> { data.line_style = style.clone(); },
 
                 Opt::Mech(mech)=> { data.mech = *mech; },
+
+                Opt::Animate(animate) => { data.show_animation = *animate; }
 
                 Opt::MarkerStyle(_)=> { 
                     eprintln!("MarkerStyle is not a valid option for segments"); 

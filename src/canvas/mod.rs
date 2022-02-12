@@ -19,18 +19,19 @@ use bevy::{
 };
 
 use crate::plot::*;
-// use crate::util::*;
+use crate::util::*;
 
-pub struct UpdateShadersEvent {
+pub struct RespawnAllEvent {
     pub plot_handle: Handle<Plot>,
     pub canvas_material_handle: Handle<CanvasMaterial>,
 }
 
+// TODO: do individual updates for canvas, markers and segments
 pub fn update_canvas_material(
     // mut commands: Commands,
     mut materials: ResMut<Assets<CanvasMaterial>>,
     plots: ResMut<Assets<Plot>>,
-    mut change_mat_event: EventReader<UpdateShadersEvent>,
+    mut change_mat_event: EventReader<RespawnAllEvent>,
 ) {
     for event in change_mat_event.iter() {
         if let Some(material) = materials.get_mut(event.canvas_material_handle.clone()) {
@@ -217,7 +218,15 @@ pub struct CanvasMaterial {
     pub outer_border: Vec2,
     pub position: Vec2,
     pub show_target: f32,
+    pub hide_contour: f32,
     pub target_pos: Vec2,
+
+    pub background_color1: Vec4,
+    pub background_color2: Vec4,
+    pub target_color: Vec4,
+
+    pub show_grid: f32,
+    pub show_axes: f32,
 }
 
 impl CanvasMaterial {
@@ -230,8 +239,14 @@ impl CanvasMaterial {
             size: plot.canvas_size,
             outer_border: plot.outer_border,
             position: plot.canvas_position,
-            show_target: 1.0,
+            show_target: if plot.show_target { 1.0 } else { 0.0 },
+            hide_contour: if plot.hide_contour { 1.0 } else { 0.0 },
             target_pos: Vec2::ZERO,
+            background_color1: col_to_vec4(plot.background_color1),
+            background_color2: col_to_vec4(plot.background_color2),
+            target_color: col_to_vec4(plot.target_color),
+            show_grid: if plot.show_grid { 1.0 } else { 0.0 },
+            show_axes: if plot.show_axes { 1.0 } else { 0.0 },
         }
     }
 
@@ -244,8 +259,17 @@ impl CanvasMaterial {
         self.globals = plot.globals;
         self.size = plot.canvas_size;
         self.outer_border = plot.outer_border;
-        self.show_target = if plot.show_target { 1.0 } else { 0.0 };
+        self.show_target = if plot.show_target && plot.target_toggle {
+            1.0
+        } else {
+            0.0
+        };
         self.target_pos = plot.to_local(plot.target_position) + plot.canvas_position;
+        self.background_color1 = col_to_vec4(plot.background_color1);
+        self.background_color2 = col_to_vec4(plot.background_color2);
+        self.target_color = col_to_vec4(plot.target_color);
+        self.show_grid = if plot.show_grid { 1.0 } else { 0.0 };
+        self.show_axes = if plot.show_axes { 1.0 } else { 0.0 };
     }
 
     pub fn within_rect(&self, position: Vec2) -> bool {

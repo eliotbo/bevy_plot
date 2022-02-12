@@ -33,7 +33,7 @@ use bevy::{
 use bytemuck::{Pod, Zeroable};
 
 // use crate::canvas_actions::*;
-use crate::canvas::UpdateShadersEvent;
+use crate::canvas::RespawnAllEvent;
 // use crate::inputs::*;
 use crate::plot::*;
 use crate::util::*;
@@ -48,7 +48,7 @@ use crate::util::*;
 pub fn markers_setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut change_canvas_material_event: EventReader<UpdateShadersEvent>,
+    mut change_canvas_material_event: EventReader<RespawnAllEvent>,
     mut plots: ResMut<Assets<Plot>>,
     query: Query<(Entity, &Handle<Plot>), With<MarkerUniform>>,
 ) {
@@ -95,7 +95,7 @@ pub fn plot_points(
                     flip: false,
                 }))),
                 GlobalTransform::default(),
-                Transform::from_translation(Vec3::new(0.0, 0.0, 20.0)),
+                Transform::from_translation(Vec3::new(0.0, 0.0, 1.12)),
                 Visibility::default(),
                 ComputedVisibility::default(),
                 MarkerInstanceMatData(
@@ -105,7 +105,7 @@ pub fn plot_points(
                             //
                             // TODO: take inner border into account
                             //
-                            position: Vec3::new(v.x, v.y, 0.0) + plot.canvas_position.extend(1.1),
+                            position: Vec3::new(v.x, v.y, 0.0) + plot.canvas_position.extend(0.000),
                             scale: 1.0,
                             color: Color::rgba(0.8, 0.6, 0.1, 1.0).as_rgba_f32(),
                         })

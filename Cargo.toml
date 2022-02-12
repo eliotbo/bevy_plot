@@ -30,3 +30,7 @@ path = "examples/minimal.rs"
 [[example]]
 name = "analytic"
 path = "examples/analytic.rs"
+
+[[example]]
+name = "animate"
+path = "examples/animate.rs"
