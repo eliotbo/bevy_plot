@@ -15,7 +15,7 @@ fn setup(mut commands: Commands, mut plots: ResMut<Assets<Plot>>) {
 
     let mut plot = Plot::default();
 
-    let xs_linspace = linspace(-1.0, 1.0, 150);
+    let xs_linspace = linspace(-0.0, 1.0, 30);
     let xs = xs_linspace.into_iter().collect::<Vec<f32>>();
 
     let ys = xs
@@ -30,5 +30,7 @@ fn setup(mut commands: Commands, mut plots: ResMut<Assets<Plot>>) {
 }
 
 pub fn custom_sin(x: f32) -> f32 {
-    (4.0 * 3.1416 * x).sin() * 0.5 / x + 0.2
+    let x2 = x - 0.5;
+    let freq = 4.0 * 3.1416;
+    (freq * x2).sin() / x2 / freq + 0.1
 }

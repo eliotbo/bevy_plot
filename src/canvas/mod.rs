@@ -1,5 +1,6 @@
 // pub mod canvas;
 pub mod canvas_actions;
+#[allow(unused_imports)]
 pub use canvas_actions::*;
 
 use bevy::{
@@ -26,57 +27,43 @@ pub struct RespawnAllEvent {
     pub canvas_material_handle: Handle<CanvasMaterial>,
 }
 
-// TODO: do individual updates for canvas, markers and segments
-pub fn update_canvas_material(
-    // mut commands: Commands,
-    mut materials: ResMut<Assets<CanvasMaterial>>,
-    plots: ResMut<Assets<Plot>>,
-    mut change_mat_event: EventReader<RespawnAllEvent>,
-) {
-    for event in change_mat_event.iter() {
-        if let Some(material) = materials.get_mut(event.canvas_material_handle.clone()) {
-            if let Some(plot) = plots.get(event.plot_handle.clone()) {
-                material.update_all(&plot);
-            }
-        }
-    }
-}
+#[derive(Component)]
+pub(crate) struct PlotLabel;
 
 #[derive(Component)]
-pub struct PlotLabel;
+pub(crate) struct TargetLabel;
 
-#[derive(Component)]
-pub struct TargetLabel;
+// #[derive(Debug, Clone, AsStd140)]
+// pub struct GraphSize {
+//     pub size: Vec2,
+//     pub outer_border: Vec2,
+// }
 
-#[derive(Debug, Clone, AsStd140)]
-pub struct GraphSize {
-    pub size: Vec2,
-    pub outer_border: Vec2,
-}
-
-pub struct SpawnGraphEvent {
-    // pub pos: Vec2,
+pub(crate) struct SpawnGraphEvent {
     pub plot_handle: Handle<Plot>,
     pub canvas: Canvas,
 }
 
-pub enum Corner {
+pub(crate) enum Corner {
     TopLeft,
     TopRight,
     BottomLeft,
     BottomRight,
 }
 
+// TODO: unimplemented
 #[derive(Component)]
-pub struct ResizePlotWindow {
+pub(crate) struct ResizePlotWindow {
     pub corner: Corner,
+    #[allow(dead_code)]
     pub previous_position: Vec2,
     pub previous_scale: Vec2,
 }
 
 #[derive(Component, Clone)]
-pub struct Canvas {
+pub(crate) struct Canvas {
     pub position: Vec2,
+    #[allow(dead_code)]
     pub previous_position: Vec2,
     pub original_size: Vec2,
     pub scale: Vec2,
@@ -85,7 +72,7 @@ pub struct Canvas {
 }
 
 impl Canvas {
-    pub fn within_rect(&self, position: Vec2) -> bool {
+    pub(crate) fn within_rect(&self, position: Vec2) -> bool {
         let size = self.original_size * self.scale;
         if position.x < self.position.x + size.x / 2.0
             && position.x > self.position.x - size.x / 2.0
@@ -97,7 +84,12 @@ impl Canvas {
         return false;
     }
 
-    pub fn clicked_on_plot_corner(&self, position: Vec2, commands: &mut Commands, entity: Entity) {
+    pub(crate) fn clicked_on_plot_corner(
+        &self,
+        position: Vec2,
+        commands: &mut Commands,
+        entity: Entity,
+    ) {
         let size = self.original_size * self.scale;
         let top_right = self.position + Vec2::new(size.x / 2.0, size.y / 2.0);
         let bottom_left = self.position + Vec2::new(-size.x / 2.0, -size.y / 2.0);
@@ -145,7 +137,7 @@ impl Canvas {
         }
     }
 
-    pub fn hovered_on_plot_edges(&self, position: Vec2, windows: &mut ResMut<Windows>) {
+    pub(crate) fn hovered_on_plot_edges(&self, position: Vec2, windows: &mut ResMut<Windows>) {
         let size = self.original_size * self.scale;
 
         let top_right = self.position + Vec2::new(size.x / 2.0, size.y / 2.0);
@@ -183,27 +175,28 @@ impl Canvas {
 }
 
 #[derive(Component)]
-pub struct MoveAxes;
+pub(crate) struct MoveAxes;
 
 #[derive(Component)]
-pub struct ZoomAxes {
+pub(crate) struct ZoomAxes {
     pub wheel_dir: f32,
+    #[allow(dead_code)]
     pub mouse_pos: Vec2,
 }
 
-pub struct UpdatePlotLabelsEvent {
+pub(crate) struct UpdatePlotLabelsEvent {
     pub plot_handle: Handle<Plot>,
     pub canvas_entity: Entity,
 }
 
-pub struct UpdateTargetLabelEvent {
+pub(crate) struct UpdateTargetLabelEvent {
     pub plot_handle: Handle<Plot>,
     pub canvas_entity: Entity,
     pub canvas_material_handle: Handle<CanvasMaterial>,
     // pub mouse_pos: Vec2,
 }
 
-///// Shader parameters
+/// Canvas shader parameters
 #[derive(TypeUuid, Debug, Clone, Component, AsStd140)]
 #[uuid = "1e08866c-0b8a-437e-8bae-38844b21137e"]
 #[allow(non_snake_case)]
@@ -239,7 +232,11 @@ impl CanvasMaterial {
             size: plot.canvas_size,
             outer_border: plot.outer_border,
             position: plot.canvas_position,
-            show_target: if plot.show_target { 1.0 } else { 0.0 },
+            show_target: if plot.show_target && plot.target_toggle {
+                1.0
+            } else {
+                0.0
+            },
             hide_contour: if plot.hide_contour { 1.0 } else { 0.0 },
             target_pos: Vec2::ZERO,
             background_color1: col_to_vec4(plot.background_color1),
@@ -250,6 +247,7 @@ impl CanvasMaterial {
         }
     }
 
+    /// Updates all the shader parameters except the mouse_pos, which is updated every frame anyway.
     pub fn update_all(&mut self, plot: &Plot) {
         // mouse_pos is supposed to be in World coordinates // self.mouse_pos = plot.plot_coord_mouse_pos;
 
@@ -272,6 +270,7 @@ impl CanvasMaterial {
         self.show_axes = if plot.show_axes { 1.0 } else { 0.0 };
     }
 
+    /// Checks whether position is inside the plot bounderies or not.
     pub fn within_rect(&self, position: Vec2) -> bool {
         let size = self.size;
         if position.x < self.position.x + size.x / 2.0
@@ -285,6 +284,7 @@ impl CanvasMaterial {
     }
 }
 
+/// I don't know how to make GpuCanvasMaterial private since it's tied to the public struct CanvasMaterial
 #[derive(Clone)]
 pub struct GpuCanvasMaterial {
     _buffer: Buffer,

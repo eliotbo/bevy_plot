@@ -1,4 +1,4 @@
-fn make_color_palette(
+fn make_color_palette() {
 
     let gray = vec![
         "d4d2dd",
@@ -7,7 +7,7 @@ fn make_color_palette(
         "9f9ea4",
         "66656a",
         "59585e",
-    ]
+    ];
 
     let black = vec![
         "38373c",

@@ -34,3 +34,7 @@ path = "examples/analytic.rs"
 [[example]]
 name = "animate"
 path = "examples/animate.rs"
+
+[[example]]
+name = "runtime_setter"
+path = "examples/runtime_setter.rs"

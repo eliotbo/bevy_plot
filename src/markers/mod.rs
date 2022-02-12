@@ -1,12 +1,8 @@
-// pub mod markers;
-// pub use markers::*;
-
 use bevy::{
     core::FloatOrd,
     core_pipeline::Transparent2d,
     ecs::system::lifetimeless::{Read, SQuery, SRes},
     ecs::system::SystemParamItem,
-    // input::mouse::{MouseMotion, MouseWheel},
     prelude::*,
     render::{
         mesh::GpuBufferInfo,
@@ -27,25 +23,19 @@ use bevy::{
         Mesh2dHandle, Mesh2dPipeline, Mesh2dPipelineKey, Mesh2dUniform, SetMesh2dBindGroup,
         SetMesh2dViewBindGroup,
     },
-    // view::NoFrustumCulling,
 };
 
 use bytemuck::{Pod, Zeroable};
 
-// use crate::canvas_actions::*;
 use crate::canvas::RespawnAllEvent;
-// use crate::inputs::*;
 use crate::plot::*;
 use crate::util::*;
 
 // TODOs:
 // 1) Modify the transform instead of spawning brand new entities
 // this way, the uniform will stay the same
-//
-// 2) Add a way to change the color of the plot.
-// Copilot, do it for me!
 
-pub fn markers_setup(
+pub(crate) fn markers_setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut change_canvas_material_event: EventReader<RespawnAllEvent>,
@@ -72,7 +62,7 @@ pub fn markers_setup(
     }
 }
 
-pub fn plot_points(
+fn plot_points(
     commands: &mut Commands,
     meshes: &mut ResMut<Assets<Mesh>>,
     plot: &mut Plot,
@@ -131,7 +121,7 @@ pub fn plot_points(
 }
 
 #[derive(Component)]
-pub struct MarkerInstanceMatData(Vec<MarkerInstanceData>);
+pub(crate) struct MarkerInstanceMatData(Vec<MarkerInstanceData>);
 impl ExtractComponent for MarkerInstanceMatData {
     type Query = &'static MarkerInstanceMatData;
     type Filter = ();
@@ -143,13 +133,7 @@ impl ExtractComponent for MarkerInstanceMatData {
 
 /// A marker component for colored 2d meshes
 #[derive(Component, Default)]
-pub struct MarkerMesh2d;
-
-#[derive(Clone, AsStd140)]
-pub struct BoundsWorld {
-    bx: Vec2,
-    by: Vec2,
-}
+pub(crate) struct MarkerMesh2d;
 
 #[derive(Component, Clone, AsStd140)]
 pub struct MarkerUniform {
@@ -177,7 +161,7 @@ struct MarkerInstanceData {
 }
 
 /// Custom pipeline for 2d meshes with vertex colors
-pub struct MarkerMesh2dPipeline {
+pub(crate) struct MarkerMesh2dPipeline {
     /// this pipeline wraps the standard [`Mesh2dPipeline`]
     mesh2d_pipeline: Mesh2dPipeline,
     pub custom_uniform_layout: BindGroupLayout,
@@ -298,7 +282,7 @@ impl Plugin for MarkerMesh2dPlugin {
 }
 
 /// Extract MarkerUniform
-pub fn extract_colored_mesh2d(
+fn extract_colored_mesh2d(
     mut commands: Commands,
     mut previous_len: Local<usize>,
     query: Query<(Entity, &MarkerUniform, &ComputedVisibility), With<MarkerInstanceMatData>>,
@@ -332,11 +316,11 @@ fn prepare_instance_buffers(
     }
 }
 
-pub struct MarkerUniformBindGroup {
+struct MarkerUniformBindGroup {
     pub value: BindGroup,
 }
 
-pub fn queue_marker_uniform_bind_group(
+fn queue_marker_uniform_bind_group(
     mut commands: Commands,
     mesh2d_pipeline: Res<MarkerMesh2dPipeline>,
     render_device: Res<RenderDevice>,
@@ -357,7 +341,7 @@ pub fn queue_marker_uniform_bind_group(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn queue_colored_mesh2d(
+fn queue_colored_mesh2d(
     transparent_draw_functions: Res<DrawFunctions<Transparent2d>>,
     colored_mesh2d_pipeline: Res<MarkerMesh2dPipeline>,
     mut pipelines: ResMut<SpecializedPipelines<MarkerMesh2dPipeline>>,
@@ -405,7 +389,7 @@ pub fn queue_colored_mesh2d(
     }
 }
 
-pub struct SetMarkerUniformBindGroup<const I: usize>;
+struct SetMarkerUniformBindGroup<const I: usize>;
 impl<const I: usize> EntityRenderCommand for SetMarkerUniformBindGroup<I> {
     type Param = (
         SRes<MarkerUniformBindGroup>,
@@ -430,12 +414,12 @@ impl<const I: usize> EntityRenderCommand for SetMarkerUniformBindGroup<I> {
 }
 
 #[derive(Component)]
-pub struct MarkerInstanceBuffer {
+struct MarkerInstanceBuffer {
     buffer: Buffer,
     length: usize,
 }
 
-pub struct DrawMarkerMeshInstanced;
+struct DrawMarkerMeshInstanced;
 impl EntityRenderCommand for DrawMarkerMeshInstanced {
     type Param = (
         SRes<RenderAssets<Mesh>>,

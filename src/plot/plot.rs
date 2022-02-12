@@ -16,7 +16,7 @@ use crate::segments::*;
 pub struct PlotPlugin;
 
 // z planes from bottom to top:
-
+//
 // canvas: 0.0001
 // text and labels: 1.0001
 // bezier 1.10
@@ -24,6 +24,11 @@ pub struct PlotPlugin;
 // markers: 1.12
 // target text: 1.2
 
+// TODO:
+// 1) Area under the curve
+// 2) Automatically color curve, segments and markers with palette
+// 3) Global variable for z planes
+// 4) optimize
 
 impl Plugin for PlotPlugin {
     fn build(&self, app: &mut App) {
@@ -49,16 +54,13 @@ impl Plugin for PlotPlugin {
                 SystemSet::new().label("model").before("shader_updates")             
                 .with_system(adjust_graph_axes)
                 .with_system(change_plot)
-                
             )
 
             .add_system_set(
-                SystemSet::new().label("shader_updates")
-                // .with_system(update_canvas_material)
+                SystemSet::new().label("shader_updates").before("other")
                 .with_system(update_bezier_uniform)
                 .with_system(spawn_bezier_function)
                 .with_system(wait_for_graph_spawn)
-                
             )
        
             .add_system_set(
@@ -67,17 +69,22 @@ impl Plugin for PlotPlugin {
                 .with_system(spawn_graph)
                 .with_system(adjust_graph_size)
                 .with_system(record_mouse_events_system)
-                // .with_system(change_bezier_uni)
-                // .with_system(change_marker_uni)
-                // .with_system(change_segment_uni)
                 .with_system(update_mouse_target)
                 .with_system(update_plot_labels)
                 .with_system(update_target)
                 .with_system(do_spawn_plot)
                 .with_system(animate_bezier)
             )
+            .add_system_set(
+                SystemSet::new().label("setups").after("other")
+                .with_system(segments_setup).label("seg")
+                // .with_system(markers_setup)
+            )
+            // why the markers setup needs to be after the segments setup is a
+            // graphics mystery. The markers use intancing and the segments do not.
+            // We lose performance because these two systems are not running in
+            // parallel.
             .add_system(markers_setup.exclusive_system().at_end())
-            .add_system(segments_setup.exclusive_system().at_end())
             // ...
             ;
     }
@@ -103,7 +110,7 @@ fn do_spawn_plot(
 
             plot.do_spawn_plot = false;
 
-            // To access the plot handle, earlier we spawned an entity with the plot handle.
+            // To access the plot handle, earlier we spawned a dummy entity with the plot handle.
             // This entity's purpose has been served and it is time to despawn it already.
             commands.entity(entity).despawn();
         }
@@ -117,11 +124,12 @@ pub struct UpdateBezierShaderEvent {
 }
 
 
-pub struct WaitForUpdatePlotLabelsEvent {
+pub(crate) struct WaitForUpdatePlotLabelsEvent {
     pub plot_handle: Handle<Plot>,
     pub quad_entity: Entity,
 }
 
+// should this be private?
 #[derive(Debug, Clone, AsStd140)]
 pub struct PlotCanvasBounds {
     pub up: Vec2,
@@ -147,10 +155,9 @@ impl Default for PlotGlobals {
 }
 
 #[derive(Debug, Clone)]
-// struct containing the data to be plotted and the color of the curves
+/// struct containing the data to be plotted and metaparameters of the plot.
 pub struct BezierData {
     pub function: fn(f32, f32) -> f32,
-
     pub size: f32,
     pub line_style: LineStyle,
     pub draw_contour: bool,
@@ -176,11 +183,6 @@ impl Default for BezierData {
 }
 
 
-// #[derive(Debug, Clone)]
-// pub struct Yo { bam: Box<dyn Fn(i32) -> i32>}
-
-// unsafe impl Sync for Yo {}
-// unsafe impl Send for Yo {}
 
 #[derive(Debug, Clone)]
 pub struct MarkerData {
@@ -220,7 +222,8 @@ impl Default for SegmentData {
     fn default() -> Self {
         SegmentData {
             data: vec![],
-            color: Color::rgb(0.6, 0.3, 0.2),
+            color: Color::hex("8eb274").unwrap(),
+            /// unused
             segment_point_color: Color::rgb(0.2, 0.3, 0.8),
             size: 1.0,
             line_style: LineStyle::Solid,
@@ -329,10 +332,10 @@ pub enum Opt {
 }
 
 
-#[derive(Debug, Clone)]
-pub struct PlotOptions {
-    pub plot_type: Option<PlotType>,
-}
+// #[derive(Debug, Clone)]
+// pub struct PlotOptions {
+//     pub plot_type: Option<PlotType>,
+// }
 
 #[derive(Debug, Clone)]
 pub struct SendPlotEvent {
@@ -341,17 +344,19 @@ pub struct SendPlotEvent {
     pub segments: bool,
 }
 
+/// Contains all relevant information to both the look of the canvas and the
+/// data to be plotted.
 #[derive(Debug, Clone, Component, TypeUuid)]
-// #[derive(Component, TypeUuid)]
 #[uuid = "a6354c45-cc21-48f7-99cc-8c1924d2427b"]
 pub struct Plot {
+    /// mouse position in the reference frame of the graph, corresponding to its axes
+    pub plot_coord_mouse_pos: Vec2,
 
     /// canvas related
+    pub canvas_position: Vec2,
     pub tick_period: Vec2,
     pub(crate) bounds: PlotCanvasBounds,
     pub globals: PlotGlobals,
-    pub canvas_position: Vec2,
-    // pub canvas_bs_color : Color, 
     pub outer_border: Vec2,
     pub canvas_size: Vec2,
     pub background_color1: Color,
@@ -376,13 +381,10 @@ pub struct Plot {
     pub bezier_num_points: usize,
     pub bezier_dummy: f32,
 
-
-
-    // mouse_pos in the reference frame of the graph, corresponding to its axes coordinates
-    pub plot_coord_mouse_pos: Vec2,
+    /// Contains the data needed by the bezier, segments and markers folders
     pub data: PlotData,
-    pub options: PlotOptions,
-    pub send_plot_event: SendPlotEvent,
+    
+
     pub handle: Option<Handle<Plot>>,
     pub do_spawn_plot: bool,
 }
@@ -429,23 +431,15 @@ impl Default for Plot {
             target_position: Vec2::new(0.0, 0.0),
             target_significant_digits: 2,
 
-
-
             canvas_position: Vec2::ZERO,
 
             data: PlotData::default(),
-
-            options: PlotOptions { plot_type: None },
 
             bezier_num_points: 100,
             bezier_dummy: 0.0,
 
 
-            send_plot_event: SendPlotEvent {
-                markers: false,
-                bezier: false,
-                segments: false,
-            },
+
 
             handle: None,
 
@@ -461,7 +455,8 @@ impl Default for Plot {
 
 
 impl Plot {
-    /// Customizable plotting function.
+    /// Customizable plotting function. Takes any type that implements Plottable, namely 
+    ///  Vec<Vec2>, Vec<(f64, f64)>, Vec<f32>, ...
     pub fn plotopt<T: Plotable>(&mut self, v: T, options: Vec<Opt>) {
         //
         let data_in_plot_format: PlotFormat = v.into_plot_format();
@@ -489,7 +484,7 @@ impl Plot {
             }
                 
             self.data.segment_groups.push(data);
-            self.send_plot_event.segments = true;
+
         }
 
         // Decide whether to draw markers using the options.
@@ -522,11 +517,11 @@ impl Plot {
             }
             
             self.data.marker_groups.push(data);
-            self.send_plot_event.markers = true;
         }
     } 
 
-    /// Quickly plot data points using segments to connect consecutive points. 
+    /// Quickly plot data points using segments to connect consecutive points. Takes any type 
+    /// that implements Plotable, namely Vec<Vec2>, Vec<(f64, f64)>, Vec<f32>, ...
     pub fn plot<T: Plotable>(&mut self, v: T) {
         //
         let pf: PlotFormat = v.into_plot_format();
@@ -537,8 +532,6 @@ impl Plot {
         };
         
         self.data.segment_groups.push(new_data);
-        self.send_plot_event.segments = true;
-
         
     }
 
@@ -553,11 +546,11 @@ impl Plot {
         };
         
         self.data.marker_groups.push(new_data);
-        self.send_plot_event.markers = true;
+
         
     }
 
-    /// Plot a function by providing said function.
+    /// Quickly plot a function by providing said function.
     pub fn plot_analytical(&mut self, f: fn(f32, f32) -> f32) {
         //
         let new_data = BezierData {
@@ -566,8 +559,6 @@ impl Plot {
         };
                 
         self.data.bezier_groups.push(new_data);
-        self.send_plot_event.bezier = true;
-
     }
 
     /// Plot a function by providing said function and options.
@@ -620,22 +611,19 @@ impl Plot {
             }
         }
         self.data.bezier_groups.push(data);
-        self.send_plot_event.bezier = true;
+
     }
 
     
-    pub fn make_canvas(&self) -> Canvas {
+    fn make_canvas(&self) -> Canvas {
 
-        // generate a random id (collisions are possible)
         let canvas = Canvas {
-            // id,
             position: self.canvas_position,
             previous_position: self.canvas_position,
             original_size: self.canvas_size,
             scale: Vec2::splat(1.0),
             previous_scale: Vec2::splat(1.0),
             hover_radius: 20.0,
-            // plot_handle: None,
         };
 
         canvas

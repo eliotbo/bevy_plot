@@ -42,11 +42,12 @@ fn setup(
     plot.background_color1 = Color::rgba(0.0, 0.0, 0.0, 0.0);
     plot.background_color2 = Color::rgba(0.0, 0.0, 0.0, 0.0);
 
+    // number of sample points taken to plot the given function
     plot.bezier_num_points = 75;
 
+    // extremeties of the graph axes
     let lower_bound = Vec2::new(-1.5, -1.0);
     let upper_bound = Vec2::new(3.0, 10.0);
-
     plot.set_bounds(lower_bound, upper_bound);
 
     // quadratic curve
@@ -60,7 +61,7 @@ fn setup(
         ],
     );
 
-    // sin wave
+    // sine wave
     plot.plotopt_analytical(
         f3,
         vec![
@@ -74,6 +75,10 @@ fn setup(
     // easing function (typically used in animations)
     plot.plotopt_analytical(easing_func, vec![Opt::Animate(true)]);
 
+    // Dummy entity that will be deleted as soon as its purpose has been served.
+    // Required for easy access to the plot handle when spawning the graph,
+    // instead of building a plot handle from a weak handle which can
+    // lead to complications.
     let plot_handle = plots.add(plot.clone());
     commands.spawn().insert(plot_handle);
 }

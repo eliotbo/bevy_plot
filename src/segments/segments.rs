@@ -4,24 +4,18 @@ use bevy::{
     ecs::system::lifetimeless::{Read, SQuery, SRes},
     ecs::system::SystemParamItem,
     prelude::*,
-    // reflect::TypeUuid,
     render::{
-        // mesh::GpuBufferInfo,
         mesh::Indices,
         render_asset::RenderAssets,
         render_component::{ComponentUniforms, DynamicUniformIndex, UniformComponentPlugin},
-        // render_component::{ExtractComponent, ExtractComponentPlugin},
         render_phase::{
             AddRenderCommand, DrawFunctions, EntityRenderCommand, RenderCommandResult, RenderPhase,
             SetItemPipeline, TrackedRenderPass,
         },
         render_resource::{std140::AsStd140, *},
         renderer::RenderDevice,
-        // texture::BevyDefault,
-        // texture::GpuImage,
         view::VisibleEntities,
-        RenderApp,
-        RenderStage,
+        RenderApp, RenderStage,
         {texture::BevyDefault, texture::GpuImage},
     },
     sprite::{
@@ -30,19 +24,13 @@ use bevy::{
     },
 };
 
-// use bytemuck::{Pod, Zeroable};
-// use crate::canvas::*;
-// use crate::inputs::*;
-
-use crate::plot::*;
-
 use crate::canvas::RespawnAllEvent;
+use crate::plot::*;
 use crate::util::*;
 
-// use flo_curves::*;
-// use itertools_num::linspace;
+// TODO: circular ends in mesh
 
-pub fn segments_setup(
+pub(crate) fn segments_setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut change_canvas_material_event: EventReader<RespawnAllEvent>,
@@ -70,7 +58,7 @@ pub fn segments_setup(
 }
 
 // Compute derivatives at each point
-pub fn make_df(ys: &Vec<Vec2>) -> (Vec<Vec2>, Vec<Vec2>) {
+fn make_df(ys: &Vec<Vec2>) -> (Vec<Vec2>, Vec<Vec2>) {
     let df0 = (ys[1].y - ys[0].y) / (ys[1].x - ys[0].x);
     let mut dfs = vec![df0];
     for i in 1..ys.len() - 1 {
@@ -106,7 +94,7 @@ pub fn make_df(ys: &Vec<Vec2>) -> (Vec<Vec2>, Vec<Vec2>) {
     return (dfs_vec2, ns_vec2);
 }
 
-pub fn plot_segments(
+fn plot_segments(
     commands: &mut Commands,
     meshes: &mut ResMut<Assets<Mesh>>,
     plot: &mut Plot,
@@ -142,17 +130,24 @@ pub fn plot_segments(
             let dy = (y1 - y0).normalize();
             let n = Vec2::new(-dy.y, dy.x);
 
-            let mut p0 = y0 + n * line_width;
-            let mut p1 = y0 - n * line_width;
-            let mut p2 = y1 + n * line_width;
-            let mut p3 = y1 - n * line_width;
+            // // short segments
+            // let mut p0 = y0 + n * line_width;
+            // let mut p1 = y0 - n * line_width;
+            // let mut p2 = y1 + n * line_width;
+            // let mut p3 = y1 - n * line_width;
 
-            if segment_plot.mech {
-                p0 = y0 + n * line_width - dy * line_width * 1.0;
-                p1 = y0 - n * line_width - dy * line_width * 1.0;
-                p2 = y1 + n * line_width + dy * line_width * 1.0;
-                p3 = y1 - n * line_width + dy * line_width * 1.0;
-            }
+            // if segment_plot.mech {
+            //     p0 = y0 + n * line_width - dy * line_width * 1.0;
+            //     p1 = y0 - n * line_width - dy * line_width * 1.0;
+            //     p2 = y1 + n * line_width + dy * line_width * 1.0;
+            //     p3 = y1 - n * line_width + dy * line_width * 1.0;
+            // }
+
+            // overlapping segments
+            let p0 = y0 + n * line_width - dy * line_width * 1.0;
+            let p1 = y0 - n * line_width - dy * line_width * 1.0;
+            let p2 = y1 + n * line_width + dy * line_width * 1.0;
+            let p3 = y1 - n * line_width + dy * line_width * 1.0;
 
             mesh0.push(p0);
             mesh0.push(p1);
@@ -197,7 +192,6 @@ pub fn plot_segments(
 
         mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, mesh_pos_attributes.clone());
         mesh.set_attribute("Ends", ends);
-        // mesh.set_attribute(Mesh::ATTRIBUTE_NORMAL, normals.clone());
         mesh.set_indices(Some(Indices::U32(inds)));
         mesh.set_attribute(Mesh::ATTRIBUTE_UV_0, mesh_attr_uvs);
 
@@ -207,10 +201,6 @@ pub fn plot_segments(
             .spawn_bundle((
                 SegmentMesh2d::default(),
                 Mesh2dHandle(meshes.add(mesh)),
-                // Mesh2dHandle(meshes.add(Mesh::from(shape::Quad {
-                //     size: Vec2::splat(50.0),
-                //     flip: false,
-                // }))),
                 GlobalTransform::default(),
                 Transform::from_translation(plot.canvas_position.extend(1.11)),
                 Visibility::default(),
@@ -235,7 +225,7 @@ pub fn plot_segments(
 
 /// A marker component for colored 2d meshes
 #[derive(Component, Default)]
-pub struct SegmentMesh2d;
+pub(crate) struct SegmentMesh2d;
 
 #[derive(Component, Clone, AsStd140)]
 pub struct SegmentUniform {
@@ -251,12 +241,13 @@ pub struct SegmentUniform {
     pub segment_point_color: Vec4,
 }
 
-pub struct SegmentMesh2dPipeline {
+struct SegmentMesh2dPipeline {
     pub view_layout: BindGroupLayout,
     pub mesh_layout: BindGroupLayout,
     pub custom_uniform_layout: BindGroupLayout,
 
     // This dummy white texture is to be used in place of optional textures
+    #[allow(dead_code)]
     pub dummy_white_gpu_image: GpuImage,
     pub shader_handle: Handle<Shader>,
 }
@@ -422,7 +413,7 @@ impl Plugin for SegmentMesh2dPlugin {
     }
 }
 
-pub fn extract_colored_mesh2d(
+fn extract_colored_mesh2d(
     mut commands: Commands,
     mut previous_len: Local<usize>,
     query: Query<(Entity, &SegmentUniform, &ComputedVisibility), With<SegmentMesh2d>>,
@@ -442,7 +433,7 @@ pub struct SegmentUniformBindGroup {
     pub value: BindGroup,
 }
 
-pub fn queue_customuniform_bind_group(
+fn queue_customuniform_bind_group(
     mut commands: Commands,
     mesh2d_pipeline: Res<SegmentMesh2dPipeline>,
     render_device: Res<RenderDevice>,
@@ -465,7 +456,7 @@ pub fn queue_customuniform_bind_group(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn queue_colored_mesh2d(
+fn queue_colored_mesh2d(
     transparent_draw_functions: Res<DrawFunctions<Transparent2d>>,
     colored_mesh2d_pipeline: Res<SegmentMesh2dPipeline>,
     mut pipelines: ResMut<SpecializedPipelines<SegmentMesh2dPipeline>>,

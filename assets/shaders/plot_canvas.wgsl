@@ -148,13 +148,23 @@ fn sdSegment(p: vec2<f32>, a: vec2<f32>, b: vec2<f32>) -> f32 {
     return length( pa - ba*h );
 }
 
+// fn draw_segment(thickness: f32, rect: vec4<f32>, uv: vec2<f32>, segment: Segment, color: float4, alpha: f32 ) -> vec4<f32> {
+//     let t = thickness; 
+//     let d = sdSegment(uv, segment.start, segment.end);
+//     let seg_start = smoothStep(t, t + 1.0/100.0,   d);
+//     let rect2 = mix(rect,  color,   alpha*abs( 1.0 -seg_start));
+//     return rect2;
+// }
+
 fn draw_segment(thickness: f32, rect: vec4<f32>, uv: vec2<f32>, segment: Segment, color: float4, alpha: f32 ) -> vec4<f32> {
-    let t = thickness; 
+    // let uv = from_local_to_pixels(uv_orig);
+    let t = thickness; // * mate.globals.zoom;
     let d = sdSegment(uv, segment.start, segment.end);
-    let seg_start = smoothStep(t, t + 1.0,   d);
+    let seg_start = smoothStep(t, t + t * 2.0,   d);
     let rect2 = mix(rect,  color,   alpha*abs( 1.0 -seg_start));
     return rect2;
 }
+
 
 fn sdCircle(pos: vec2<f32>, r: f32) -> f32 {
     return length(pos)-r;
@@ -260,7 +270,7 @@ fn fragment(in: VertexOutput) -> [[location(0)]] vec4<f32> {
 
     let aspect_ratio = tick_period_pix.x / tick_period_pix.y;
 
-    let bars_thickness  = 0.5 / tick_period_pix;
+    let bars_thickness  = 0.5 / tick_period_pix ;
 
     if (mate.show_grid > 0.5 ) {
         // horizontal bars
@@ -273,7 +283,7 @@ fn fragment(in: VertexOutput) -> [[location(0)]] vec4<f32> {
         segment.end = float2( half.x, edges.y) ;
         rect = draw_segment(bars_thickness.x , rect, ggg  , segment, black, bar_alpha) ;
     }
-    /////////////////////////////////////// bars /////////////////////////////////////
+    /////////////////////////////////////// grid /////////////////////////////////////
 
 
 

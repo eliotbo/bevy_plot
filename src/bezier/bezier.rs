@@ -63,7 +63,7 @@ impl Line {
 }
 
 // Compute derivatives at each point
-pub fn make_df(xs: &Vec<f32>, time: f32, f: &fn(f32, f32) -> f32) -> (Vec<Vec2>, Vec<Vec2>) {
+pub(crate) fn make_df(xs: &Vec<f32>, time: f32, f: &fn(f32, f32) -> f32) -> (Vec<Vec2>, Vec<Vec2>) {
     let delta = (xs[1] - xs[0]) / 1000.0;
 
     // derivatives
@@ -157,7 +157,6 @@ pub fn update_bezier_uniform(
 }
 
 pub struct SpawnBezierCurveEvent {
-    // pub canvas_handle: Handle<CanvasMaterial>,
     pub group_number: usize,
     pub plot_handle: Handle<Plot>,
 }
@@ -404,7 +403,6 @@ pub fn plot_fn(
 
         let mut mesh_pos_attributes: Vec<[f32; 3]> = Vec::new();
 
-        // TODO: z position is here
         for position in mesh0 {
             mesh_pos_attributes.push([position.x, position.y, 0.0]);
         }
@@ -446,19 +444,21 @@ pub fn plot_fn(
     }
 }
 
+/// Component inserted in the entity corresponding to the kth curve group in Plot.data.bezier_groups.
 #[derive(Component)]
 pub struct BezierCurveNumber(pub usize);
 
 /// A marker component for colored 2d meshes
 #[derive(Component, Default)]
-pub struct BezierMesh2d;
+pub(crate) struct BezierMesh2d;
 
-pub struct BezierMesh2dPipeline {
+struct BezierMesh2dPipeline {
     pub view_layout: BindGroupLayout,
     pub mesh_layout: BindGroupLayout,
     pub custom_uniform_layout: BindGroupLayout,
 
     // This dummy white texture is to be used in place of optional textures
+    #[allow(dead_code)]
     pub dummy_white_gpu_image: GpuImage,
     pub shader_handle: Handle<Shader>,
 }
@@ -517,7 +517,7 @@ impl SpecializedPipeline for BezierMesh2dPipeline {
                 // position is available at location 0 in the shader
                 shader_location: 0,
             },
-            // Color
+            // Color ----> not truly color. It's actually Ends in the shader, but I am too tired to change it right now.
             VertexAttribute {
                 format: VertexFormat::Float32x4,
                 offset: 0,
@@ -570,8 +570,6 @@ impl SpecializedPipeline for BezierMesh2dPipeline {
                 // Bind group 1 is the mesh uniform
                 self.mesh_layout.clone(),
                 self.custom_uniform_layout.clone(),
-                // texture
-                // self.material_layout.clone(),
             ]),
             primitive: PrimitiveState {
                 front_face: FrontFace::Ccw,
@@ -624,7 +622,7 @@ impl Plugin for BezierMesh2dPlugin {
     }
 }
 
-pub fn extract_colored_mesh2d(
+fn extract_colored_mesh2d(
     mut commands: Commands,
     mut previous_len: Local<usize>,
     query: Query<(Entity, &BezierCurveUniform, &ComputedVisibility), With<BezierMesh2d>>,
@@ -640,11 +638,12 @@ pub fn extract_colored_mesh2d(
     commands.insert_or_spawn_batch(values);
 }
 
+/// I can't make this private because it's tied to BezierCurveUniform, which is public
 pub struct BezierCurveUniformBindGroup {
     pub value: BindGroup,
 }
 
-pub fn queue_customuniform_bind_group(
+fn queue_customuniform_bind_group(
     mut commands: Commands,
     mesh2d_pipeline: Res<BezierMesh2dPipeline>,
     render_device: Res<RenderDevice>,
@@ -667,7 +666,7 @@ pub fn queue_customuniform_bind_group(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn queue_colored_mesh2d(
+fn queue_colored_mesh2d(
     transparent_draw_functions: Res<DrawFunctions<Transparent2d>>,
     colored_mesh2d_pipeline: Res<BezierMesh2dPipeline>,
     mut pipelines: ResMut<SpecializedPipelines<BezierMesh2dPipeline>>,

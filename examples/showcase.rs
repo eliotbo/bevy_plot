@@ -15,97 +15,8 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .add_plugin(PlotPlugin)
         .add_startup_system(setup)
-        .add_system(change_segment_uni)
-        .add_system(change_marker_uni)
-        .add_system(change_bezier_uni)
         .run();
 }
-
-use bevy_plot::UpdateBezierShaderEvent;
-
-pub fn change_bezier_uni(
-    // mut query: Query<&mut BezierCurveUniform>,
-    mut plots: ResMut<Assets<Plot>>,
-    query: Query<(Entity, &Handle<Plot>, &BezierCurveNumber), With<BezierMesh2d>>,
-    mouse_position: Res<Cursor>,
-    mouse_button_input: Res<Input<MouseButton>>,
-    mut event: EventWriter<UpdateBezierShaderEvent>,
-) {
-    // for mut custom_uni in query.iter_mut() {
-    for (entity, plot_handle, curve_number) in query.iter() {
-        let plot = plots.get_mut(plot_handle).unwrap();
-
-        let mouse_pos = mouse_position.position;
-
-        if mouse_button_input.pressed(MouseButton::Left) {
-            plot.bezier_dummy = mouse_pos.x / 100.0;
-        } else if mouse_button_input.pressed(MouseButton::Right) {
-            if let Some(mut bezier_data) = plot.data.bezier_groups.get_mut(curve_number.0) {
-                // bezier_data.mech = if mouse_pos.x > 0.0 { true } else { false };
-                bezier_data.size = mouse_pos.x / 100.0;
-
-                // So as to not send the event twice is show_animation is set to true
-                if !bezier_data.show_animation {
-                    event.send(UpdateBezierShaderEvent {
-                        plot_handle: plot_handle.clone(),
-                        entity,
-                        group_number: curve_number.0,
-                    });
-                }
-            }
-        }
-    }
-}
-
-pub fn change_segment_uni(
-    mut query: Query<&mut SegmentUniform>,
-    mouse_position: Res<Cursor>,
-    mouse_button_input: Res<Input<MouseButton>>,
-) {
-    for mut segment_uni in query.iter_mut() {
-        let mouse_pos = mouse_position.position;
-
-        if mouse_button_input.pressed(MouseButton::Left) {
-            segment_uni.hole_size = mouse_pos.x / 100.0;
-            // println!("left: {}, right: {}", segment_uni.left, segment_uni.mech);
-        } else if mouse_button_input.pressed(MouseButton::Right) {
-            segment_uni.segment_size = (mouse_pos.x / 100.0).clamp(0.2, 3.0);
-
-            if segment_uni.segment_size < 2.0 {
-                segment_uni.mech = 0.0;
-            } else {
-                segment_uni.mech = 1.0;
-            }
-        }
-    }
-}
-
-pub fn change_marker_uni(
-    mut query: Query<&mut MarkerUniform>,
-    mouse_position: Res<Cursor>,
-    mouse_button_input: Res<Input<MouseButton>>,
-) {
-    for mut custom_uni in query.iter_mut() {
-        let mouse_pos = mouse_position.position;
-
-        if mouse_button_input.pressed(MouseButton::Right) {
-            custom_uni.marker_size = mouse_pos.x / 100.0;
-            // println!("{:?}", custom_uni.marker_size);
-            // println!("{}", custom_uni.ya.z);
-        }
-        // else if mouse_button_input.pressed(MouseButton::Right) {
-        //     custom_uni.ya.x = mouse_pos.x / 100.0;
-        //     custom_uni.ya.y = mouse_pos.y / 100.0;
-        // }
-        // println!("{:?}", custom_uni.ya);
-    }
-}
-
-// TODO:
-// 2) Area under the curve
-// 3) clean up the code
-// 4) generate the docs
-// 5) Automatically color curve, segments and markers with palette
 
 fn setup(
     mut commands: Commands,
@@ -142,7 +53,7 @@ fn setup(
 
     plot.set_bounds(lower_bound, upper_bound);
 
-    let xs_linspace = linspace(-0.05, 0.9, 50);
+    let xs_linspace = linspace(-0.1, 0.9, 50);
     let xs = xs_linspace.into_iter().collect::<Vec<f32>>();
 
     let ys = xs
@@ -182,14 +93,14 @@ fn setup(
     commands.spawn().insert(plot_handle);
 }
 
-// example function to be plotted
+// sine waves
 pub fn f(x: f32) -> f32 {
-    let freq = 4.0;
-    let y = (x * freq).sin() / 2.0;
+    let freq = 40.0;
+    let x2 = x - 0.45;
+    let y = (x2 * freq).sin() / x2 / 25.0 + 3.0;
     return y;
 }
 
-// example function to be plotted
 pub fn f2(x: f32) -> f32 {
     let freq = 8.0;
     let y = (x * freq).sin() / 2.0;
