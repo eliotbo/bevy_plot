@@ -141,7 +141,8 @@ pub struct PlotCanvasBounds {
 
 
 #[derive(Debug, Clone)]
-/// struct containing the data to be plotted and metaparameters of the plot.
+/// Struct containing the data to be plotted and metaparameters of any analytical plot. 
+/// In the ```data.bezier_groups``` field of a Plot.
 pub struct BezierData {
     pub function: fn(f32, f32) -> f32,
     pub size: f32,
@@ -169,7 +170,8 @@ impl Default for BezierData {
 }
 
 
-
+/// struct containing the data to be plotted and metaparameters of a marker (or scatter) plot.
+/// In the ```data.marker_groups``` field of a Plot.
 #[derive(Debug, Clone)]
 pub struct MarkerData {
     pub data: Vec<Vec2>,
@@ -193,6 +195,8 @@ impl Default for MarkerData {
     }
 }
 
+/// struct containing the data to be plotted and metaparameters of a segment (or regular) plot.
+/// In the ```data.segment_groups``` field of a Plot.
 #[derive(Debug, Clone)]
 pub struct SegmentData {
     pub data: Vec<Vec2>,
@@ -219,6 +223,7 @@ impl Default for SegmentData {
     }
 }
 
+/// The data for each type of plot has be accessed though this struct first.
 #[derive(Debug, Clone)]
 pub struct PlotData {
     pub marker_groups: Vec<MarkerData>,
@@ -237,6 +242,7 @@ impl Default for PlotData {
     }
 }
 
+/// Type of markers for a given marker plot.
 #[derive(Debug, Clone, PartialEq)]
 pub enum MarkerStyle {
     None,
@@ -268,7 +274,9 @@ impl MarkerStyle {
     }
 }
 
-
+/// For future use mostly. The ```None``` variant can be used to hide the 
+/// segments of a regular plot when calling plotopt_analytical(), but there
+/// is little reason to do that.
 #[derive(Debug, Clone, PartialEq)]
 pub enum LineStyle{
     None,
@@ -315,19 +323,6 @@ pub enum Opt {
     MarkerInnerPointColor(Color),
     Contour(bool),
     
-}
-
-
-// #[derive(Debug, Clone)]
-// pub struct PlotOptions {
-//     pub plot_type: Option<PlotType>,
-// }
-
-#[derive(Debug, Clone)]
-pub struct SendPlotEvent {
-    pub markers: bool,
-    pub bezier: bool,
-    pub segments: bool,
 }
 
 /// Contains all relevant information to both the look of the canvas and the data to be plotted.
@@ -634,11 +629,11 @@ impl Plot {
 
     }
 
-    pub fn delta_axes(&self) -> Vec2 {
+    pub(crate) fn delta_axes(&self) -> Vec2 {
         self.bounds.up - self.bounds.lo
     }
 
-    pub fn zoom_axes(&mut self, direction: f32) {
+    pub(crate) fn zoom_axes(&mut self, direction: f32) {
         let percent_factor = 10.0;
 
         let multiplier = 1.0 + direction * percent_factor / 100.0;
@@ -651,7 +646,7 @@ impl Plot {
         self.zoom *= multiplier;
     }
 
-    pub fn move_axes(&mut self, mouse_delta: Vec2) {
+    pub(crate) fn move_axes(&mut self, mouse_delta: Vec2) {
         let mut axes = self.delta_axes();
         axes.x *= -1.0;
         let size = self.canvas_size / (1. + self.outer_border);
@@ -660,7 +655,8 @@ impl Plot {
         self.bounds.lo += mouse_delta * axes / size;
     }
 
-    pub fn clamp_tick_period(&mut self) {
+    // TODO: make a smarter tick period adjuster
+    pub(crate) fn clamp_tick_period(&mut self) {
         let max_num_ticks = 15.0;
         let min_num_ticks = 0.000001;
 
@@ -675,8 +671,8 @@ impl Plot {
         );
     }
 
-    /// Override the default plot bounds. Beware! The tick period is automatically adjusted.
-    /// Changing the tick period before setting the bounds will not have the intended effect.
+    /// Override the default plot bounds: x axis goes from bounds.lo.x to bounds.up.x. 
+    /// Beware! The tick period is automatically adjusted. Changing the tick period before setting the bounds will not have the intended effect.
     /// The bounds must be set before the ticks.
     pub fn set_bounds(&mut self, lo: Vec2, up: Vec2) {
         self.bounds = PlotCanvasBounds {
@@ -687,18 +683,17 @@ impl Plot {
         let delta = up - lo;
         let exact_tick = delta / 10.0;
 
-        // println!("exact_tick: {}", exact_tick);
         // find order of magnitude of dx
         let order_x = exact_tick.x.log10().floor();
         let mag_x = 10_f32.powf(order_x);
-        // println!("magx: {}", magx);
+
 
         let p1x = mag_x * 1.0;
         let p2x = mag_x * 2.0;
         let p5x = mag_x * 5.0;
 
         let psx = [p1x, p2x, p5x];
-        //  println!("psx: {:?}", psx);
+
 
         let vx = vec! [(p1x-exact_tick.x).abs() , (p2x-exact_tick.x).abs(), (p5x-exact_tick.x).abs()];
         
@@ -713,14 +708,14 @@ impl Plot {
 
         let order_y = exact_tick.y.log10().floor();
         let mag_y = 10_f32.powf(order_y);
-        // println!("magxy {}", mag_y);
+
 
         let p1y = mag_y * 1.0;
         let p2y = mag_y * 2.0;
         let p5y = mag_y * 5.0;
 
         let psy = [p1y, p2y, p5y];
-        //  println!("psy: {:?}", psy);
+
 
         let vy = vec! [(p1y-exact_tick.y).abs() , (p2y-exact_tick.y).abs(), (p5y-exact_tick.y).abs()];
         
@@ -730,7 +725,7 @@ impl Plot {
             .map(|(index, _)| index);
 
         let tick_y = psy[min_y_index.unwrap()]; 
-        // println!("tick_y: {}", tick_y);
+
 
   
 
@@ -739,7 +734,8 @@ impl Plot {
         self.compute_zeros();
     }
 
-    pub fn compute_zeros(&mut self) {
+
+    pub(crate) fn compute_zeros(&mut self) {
         let lo_world = -self.canvas_size / 2.0 / (1.0 + self.outer_border);
 
         let v = Vec2::new(
@@ -754,7 +750,7 @@ impl Plot {
         self.zero_world = lo_world - v ;
     }
 
-    pub fn compute_bounds_world(&self) -> PlotCanvasBounds {
+    pub(crate) fn compute_bounds_world(&self) -> PlotCanvasBounds {
 
         let lo = self.to_local(self.bounds.lo);
         let up = self.to_local(self.bounds.up);
@@ -762,6 +758,7 @@ impl Plot {
         PlotCanvasBounds { up, lo }
     }
 
+    /// Convert a point in plot coordinates to a point in world coordinates modulo the canvas position
     pub fn to_local(&self, v: Vec2) -> Vec2 {
 
                 self.zero_world
@@ -772,6 +769,7 @@ impl Plot {
 
     }
 
+    /// Convert a point in world coordinates to a point in the graph coordinates.
     pub fn world_to_plot(&self, y: Vec2) -> Vec2 {
         (y - self.zero_world - self.canvas_position) * (self.bounds.up - self.bounds.lo)
             / self.canvas_size

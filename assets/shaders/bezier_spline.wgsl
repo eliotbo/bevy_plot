@@ -12,11 +12,11 @@ type float2 = vec2<f32>;
 struct BezierCurveUniform {
     mech: f32;
     zoom: f32;
-    dummy: f32;
     inner_canvas_size_in_pixels: float2;
     canvas_position_in_pixels: float2;
     color: float4;
     size: f32;
+    dummy: f32;
     style: i32;
 };
 

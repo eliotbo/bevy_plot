@@ -26,11 +26,7 @@ use bevy::{
     },
 };
 
-// use crate::canvas::*;
-// use crate::inputs::*;
-
 use crate::plot::*;
-
 use crate::util::*;
 
 use itertools_num::linspace;
@@ -39,7 +35,8 @@ use itertools_num::linspace;
 struct Line(Vec2, Vec2);
 
 impl Line {
-    // finding the intersection of two lines
+    // finding the intersection of two lines. Used to get the control point of a
+    // quadratic bezier curve
     pub fn intersect(self, other: Self) -> Option<Vec2> {
         let a1 = self.1.y - self.0.y;
         let b1 = self.0.x - self.1.x;
@@ -80,6 +77,7 @@ pub(crate) fn make_df(xs: &Vec<f32>, time: f32, f: &fn(f32, f32) -> f32) -> (Vec
 
     return (dfs, ns);
 
+    // // Code for computing the derivatives of an array instead of a function
     // let df0 = (f(xs[1]) - f(xs[0])) / (xs[1] - xs[0]);
     // let mut dfs = vec![df0];
     // for i in 1..xs.len() - 1 {
@@ -115,19 +113,26 @@ pub(crate) fn make_df(xs: &Vec<f32>, time: f32, f: &fn(f32, f32) -> f32) -> (Vec
     // return (dfs_vec2, ns_vec2);
 }
 
+/// Uniform sent to bezier_spline.wgsl
 #[derive(Component, Clone, AsStd140)]
 pub struct BezierCurveUniform {
+    /// If set to > 0.5, the curve will be split into mechanical joints, but it's just a look
     pub mech: f32,
     pub zoom: f32,
-    pub dummy: f32,
     pub inner_canvas_size_in_pixels: Vec2,
     pub canvas_position_in_pixels: Vec2,
     pub color: Vec4,
+
+    /// Curve thickness
     pub size: f32,
+
+    /// unused
+    pub dummy: f32,
+    /// unused
     pub style: i32,
 }
 
-pub fn update_bezier_uniform(
+pub(crate) fn update_bezier_uniform(
     mut plots: ResMut<Assets<Plot>>,
     mut bez_events: EventReader<UpdateBezierShaderEvent>,
     mut query: Query<(&Handle<Plot>, &mut BezierCurveUniform)>,
@@ -156,12 +161,12 @@ pub fn update_bezier_uniform(
     }
 }
 
-pub struct SpawnBezierCurveEvent {
+pub(crate) struct SpawnBezierCurveEvent {
     pub group_number: usize,
     pub plot_handle: Handle<Plot>,
 }
 
-pub fn spawn_bezier_function(
+pub(crate) fn spawn_bezier_function(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut plots: ResMut<Assets<Plot>>,
@@ -201,7 +206,7 @@ pub fn spawn_bezier_function(
     }
 }
 
-pub fn animate_bezier(
+pub(crate) fn animate_bezier(
     mut event: EventWriter<SpawnBezierCurveEvent>,
     plots: Res<Assets<Plot>>,
     query: Query<(&Handle<Plot>, &BezierCurveNumber)>,
@@ -220,7 +225,7 @@ pub fn animate_bezier(
     }
 }
 
-pub fn plot_fn(
+fn plot_fn(
     commands: &mut Commands,
     meshes: &mut ResMut<Assets<Mesh>>,
     xs: Vec<f32>,
@@ -413,7 +418,6 @@ pub fn plot_fn(
                 Mesh2dHandle(meshes.add(mesh)),
                 GlobalTransform::default(),
                 Transform::from_translation(plot.canvas_position.extend(1.10)),
-                // Transform::from_translation(Vec3::new(0.0, 0.0, 3.0)),
                 Visibility::default(),
                 ComputedVisibility::default(),
             ))
@@ -627,8 +631,8 @@ fn extract_colored_mesh2d(
 }
 
 /// I can't make this private because it's tied to BezierCurveUniform, which is public
-pub struct BezierCurveUniformBindGroup {
-    pub value: BindGroup,
+struct BezierCurveUniformBindGroup {
+    value: BindGroup,
 }
 
 fn queue_customuniform_bind_group(
@@ -701,7 +705,7 @@ fn queue_colored_mesh2d(
     }
 }
 
-pub struct SetBezierCurveUniformBindGroup<const I: usize>;
+struct SetBezierCurveUniformBindGroup<const I: usize>;
 impl<const I: usize> EntityRenderCommand for SetBezierCurveUniformBindGroup<I> {
     type Param = (
         SRes<BezierCurveUniformBindGroup>,

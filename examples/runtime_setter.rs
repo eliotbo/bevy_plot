@@ -14,12 +14,13 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .add_plugin(PlotPlugin)
         .add_startup_system(setup)
-        // .add_system(change_bezier_metaparameters_at_runtime)
+        .add_system(change_bezier_metaparameters_at_runtime)
         .run();
 }
 
 use bevy_plot::UpdateBezierShaderEvent;
 
+// Press Mouse::Right and drag the mouse to change the thickness of the curve
 pub fn change_bezier_metaparameters_at_runtime(
     mut plots: ResMut<Assets<Plot>>,
     query: Query<(Entity, &Handle<Plot>, &BezierCurveNumber)>,
@@ -33,14 +34,12 @@ pub fn change_bezier_metaparameters_at_runtime(
 
         let mouse_pos = mouse_position.position;
 
-        if mouse_button_input.pressed(MouseButton::Left) {
-            plot.bezier_dummy = mouse_pos.x / 100.0;
-        } else if mouse_button_input.pressed(MouseButton::Right) {
+        if mouse_button_input.pressed(MouseButton::Right) {
             if let Some(mut bezier_data) = plot.data.bezier_groups.get_mut(curve_number.0) {
-                // bezier_data.mech = if mouse_pos.x > 0.0 { true } else { false };
                 bezier_data.size = mouse_pos.x / 100.0;
 
-                // So as to not send the event twice if show_animation is set to true
+                // If show_animation is set to true, UpdateBezierShaderEvent will be sent elsewhere anyway,
+                // so we don't need to send it twice every frame.
                 if !bezier_data.show_animation {
                     event.send(UpdateBezierShaderEvent {
                         plot_handle: plot_handle.clone(),
@@ -84,8 +83,8 @@ fn setup(
 }
 
 pub fn f3(x: f32, t: f32) -> f32 {
-    let freq = 5.0;
-    let y = (x * freq + t * 5.0).sin() / 2.0 + 5.0;
+    let freq = 20.0;
+    let y = (x * freq + t * 0.0).sin() / 2.0 + 0.5;
     return y;
 }
 

@@ -131,21 +131,28 @@ impl ExtractComponent for MarkerInstanceMatData {
     }
 }
 
-/// A marker component for colored 2d meshes
 #[derive(Component, Default)]
 pub(crate) struct MarkerMesh2d;
 
+/// Uniform sent to markers.wgsl
 #[derive(Component, Clone, AsStd140)]
 pub struct MarkerUniform {
     pub marker_size: f32,
+    /// When the ```marker_point_color``` field is different from the ```color``` field,
+    /// there is a small visible circle within the marker. ```hole_size``` controls the size of the circle.
     pub hole_size: f32,
     pub zoom: f32,
     pub marker_type: i32,
+    /// Size of the size of the instanced square quad for one marker.
     pub quad_size: f32,
+
+    /// Shows a black contour around the marker if the value is > 0.5.
     pub contour: f32,
     pub inner_canvas_size_in_pixels: Vec2,
     pub canvas_position: Vec2,
     pub color: Vec4,
+
+    /// Color of the small circle within the marker.
     pub marker_point_color: Vec4,
 }
 
@@ -261,7 +268,7 @@ type DrawMarkerMesh2d = (
     DrawMarkerMeshInstanced,
 );
 
-pub struct MarkerMesh2dPlugin;
+pub(crate) struct MarkerMesh2dPlugin;
 
 impl Plugin for MarkerMesh2dPlugin {
     fn build(&self, app: &mut App) {
