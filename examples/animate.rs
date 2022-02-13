@@ -13,7 +13,7 @@ fn main() {
             height: 600.,
             ..Default::default()
         })
-        .insert_resource(ClearColor(Color::rgba(0.0, 0.0, 0.0, 0.0)))
+        // .insert_resource(ClearColor(Color::rgba(0.0, 0.0, 0.0, 0.0)))
         .add_plugins(DefaultPlugins)
         .add_plugin(PlotPlugin)
         .add_startup_system(setup)
@@ -76,11 +76,11 @@ fn setup(
     // easing function (typically used in animations)
     plot.plotopt_func(easing_func, vec![Opt::Animate(true)]);
 
+    let plot_handle = plots.add(plot.clone());
     // Dummy entity that will be deleted as soon as its purpose has been served.
     // Required for easy access to the plot handle when spawning the graph,
     // instead of building a plot handle from a weak handle which can
     // lead to complications.
-    let plot_handle = plots.add(plot.clone());
     commands.spawn().insert(plot_handle);
 }
 
