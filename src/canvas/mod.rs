@@ -289,7 +289,6 @@ impl CanvasMaterial {
     }
 }
 
-/// I don't know how to make GpuCanvasMaterial private since it's tied to the public struct CanvasMaterial
 #[derive(Clone)]
 pub struct GpuCanvasMaterial {
     _buffer: Buffer,

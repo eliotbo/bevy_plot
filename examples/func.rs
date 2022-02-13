@@ -15,7 +15,7 @@ fn setup(mut commands: Commands, mut plots: ResMut<Assets<Plot>>) {
     let mut plot = Plot::default();
 
     // note that a closure would work as well
-    plot.plot_analytical(easing_function);
+    plot.plot_func(easing_function);
 
     let plot_handle = plots.add(plot.clone());
     commands.spawn().insert(plot_handle);

@@ -126,7 +126,6 @@ pub struct UpdateBezierShaderEvent {
     pub group_number: usize,
 }
 
-
 pub(crate) struct WaitForUpdatePlotLabelsEvent {
     pub plot_handle: Handle<Plot>,
     pub quad_entity: Entity,
@@ -140,32 +139,39 @@ pub struct PlotCanvasBounds {
     pub lo: Vec2,
 }
 
-
-
-
-
 #[derive(Debug, Clone)]
-/// Struct containing the data to be plotted and metaparameters of any analytical plot. 
-/// It can be found in  the ```data.bezier_groups``` field of a Plot.
+/// Struct containing the data to be plotted and metaparameters of any explicit function plot. 
+/// It can be found in  the ```data.bezier_groups``` field of a Plot. The reason for its name is
+/// that bevy_plot interpolates between samples of the function using quadratic bezier curves.
 pub struct BezierData {
+    /// Function to be displayed
     pub function: fn(f32, f32) -> f32,
+    /// Thickness of the segments
     pub size: f32,
+    /// Not implemented yet
     pub line_style: LineStyle,
-    pub draw_contour: bool,
+
+    /// Color of the curve
     pub color: Color,
+
+    /// If true, the function is displayed with visual mechanical joints
     pub mech: bool,
+
+    /// The number of samples that bevy_plot uses to draw the
+    /// function with quadratic interpolation between each sample
     pub num_points: usize,
+
+    /// If true, bevy_plot recomputes the ```function``` field every frame
     pub show_animation: bool,
 }
 
 impl Default for BezierData {
     fn default() -> Self {
         BezierData {
-            function: |x: f32, _t: f32| x, // Vec<fn(f32) -> f32>,
+            function: |x: f32, _t: f32| x, 
             color: Color::rgb(0.2, 0.3, 0.8),
             size: 1.0,
             line_style: LineStyle::Solid,
-            draw_contour: false,
             mech: false,
             num_points: 256,
             show_animation: false,
@@ -178,11 +184,22 @@ impl Default for BezierData {
 /// It can be found in the ```data.marker_groups``` field of a Plot.
 #[derive(Debug, Clone)]
 pub struct MarkerData {
+    /// The data to be displayed in the scatter plot
     pub data: Vec<Vec2>,
+
+    /// The main color of the markers
     pub color: Color,
+
+    /// The color of tiny circle centered exactly at the data point
     pub marker_point_color: Color,
+
+    /// Determines the shape of the markers
     pub marker_style: MarkerStyle,
+
+    /// Size of the markers, clamped between 0.2 and 2.0
     pub size: f32,
+
+    /// If true, the markers are displayed with a black border
     pub draw_contour: bool,
 }
 
@@ -203,9 +220,11 @@ impl Default for MarkerData {
 /// It can be found in  the ```data.segment_groups``` field of a Plot.
 #[derive(Debug, Clone)]
 pub struct SegmentData {
+    /// The data to be displayed in the regular plot
     pub data: Vec<Vec2>,
+    /// Color of the segments
     pub color: Color,
-    pub segment_point_color: Color,
+    /// Thickness of the segments
     pub size: f32,
     pub line_style: LineStyle,
     pub draw_contour: bool,
@@ -217,8 +236,6 @@ impl Default for SegmentData {
         SegmentData {
             data: vec![],
             color: Color::hex("8eb274").unwrap(),
-            /// unused
-            segment_point_color: Color::rgb(0.2, 0.3, 0.8),
             size: 1.0,
             line_style: LineStyle::Solid,
             draw_contour: false,
@@ -227,7 +244,8 @@ impl Default for SegmentData {
     }
 }
 
-/// The data for each type of plot has be accessed though this struct first.
+/// The data for each type of plot has to be accessed though this struct first. Each element of a ```Vec``` 
+/// corresponds to a particular curve on the graph.
 #[derive(Debug, Clone)]
 pub struct PlotData {
     pub marker_groups: Vec<MarkerData>,
@@ -278,19 +296,18 @@ impl MarkerStyle {
     }
 }
 
-/// For future use mostly. The ```None``` variant can be used to hide the 
-/// segments of a regular plot when calling plotopt_analytical(), but there
-/// is little reason to do that.
+/// The ```None``` variant can be used to avoid spawning the 
+/// segments of a regular plot when calling plotopt(), leaving only the markers.
 #[derive(Debug, Clone, PartialEq)]
 pub enum LineStyle{
     None,
     Solid,
 
-    /// unimplemented
-    Dashed,
-    Dotted,
-    DashDot,
-    DashDotDot,
+    // // unimplemented
+    // Dashed,
+    // Dotted,
+    // DashDot,
+    // DashDotDot,
 }
 
 impl LineStyle {
@@ -298,10 +315,10 @@ impl LineStyle {
         match self {
             LineStyle::None => -1,
             LineStyle::Solid => 0,
-            LineStyle::Dashed => 1,
-            LineStyle::Dotted => 2,
-            LineStyle::DashDot => 3,
-            LineStyle::DashDotDot => 4,
+            // LineStyle::Dashed => 1,
+            // LineStyle::Dotted => 2,
+            // LineStyle::DashDot => 3,
+            // LineStyle::DashDotDot => 4,
         }
     }
 }
@@ -310,21 +327,42 @@ impl LineStyle {
 #[derive(Debug, Clone, PartialEq)]
 // Options as the second argument the of plotop method
 pub enum Opt {
-    /// Shared between plotopt_analytical() and plotopt()
+    /// Main color. Shared between plotopt_func() and plotopt()
     Color(Color),
+
+    /// Thickness of a curve or segment. Shared between plotopt_func() and plotopt()
     Size(f32),
+
+    /// Either ```LineStyle::None``` or ```LineStyle::Solid```. The former can be used to
+    /// avoid spawning either the segments or the bezier curves, depending on the type of plot.
     LineStyle(LineStyle),
+
+    /// If true, the shader will draw joints between the segments of a regular plot or the 
+    /// parts of a func curve.
     Mech(bool),
     
-    /// Works with plotopt_analytical() only.
+    /// Determines the number of separate parts in a func plot. 
+    /// Works with plotopt_func() only.
     NumPoints(usize),
+
+    /// If true, bevy_plot computes the ```function``` field of BezierData at every frame.
+    /// Needs to be used in conjunction with a function that explicitly depends on time.
     Animate(bool),
 
-    /// Use with plotopt() exclusively.
+    /// Main color of the markers.
     MarkerColor(Color),
+
+    /// Size of the markers.
     MarkerSize(f32),
+
+    /// Determines the shape of the markers.
     MarkerStyle(MarkerStyle),
+
+    /// Color of the tiny circle centered exactly at the data point. To turn this features off,
+    /// simply chose the same color as the MarkerColor.
     MarkerInnerPointColor(Color),
+
+    /// If true, the markers are displayed with a black border.
     Contour(bool),
     
 }
@@ -374,6 +412,8 @@ pub struct Plot {
 
     /// Hides half the numeric tick labels for a less crowded feel
     pub hide_half_ticks: bool,
+
+    /// Color for the numerical labels shown by the side of the grid lines
     pub tick_label_color: Color,
 
     /// Adjusts the number of significant digits for the tick labels
@@ -381,21 +421,26 @@ pub struct Plot {
 
     /// A target can be spawned together with a pair of coordinates by pressing MouseButton::Middle
     pub show_target: bool,
+
     /// The color for the coordinate pair by the side of the target
     pub target_label_color: Color,
+
+    /// Color of the target
     pub target_color: Color,
-    pub target_position: Vec2,
+    
+    /// Number of significant digits for the target coordinates
     pub target_significant_digits: usize,
 
     /// Axes are shown by default
     pub show_axes: bool,
 
-    /// Only related to the plot_analytical() and plotopt_analytical() functions
+    /// Only related to the plot_func() and plotopt_func() functions
     pub bezier_num_points: usize,
 
     /// Contains the data and metaparameters needed by the bezier, segments and markers folders
     pub data: PlotData,
     
+    pub(crate) target_position: Vec2,
     pub(crate) target_toggle: bool,
     pub(crate) bounds: PlotCanvasBounds,
     pub(crate) bezier_dummy: f32,
@@ -508,8 +553,9 @@ impl Plot {
                 match option {
                     Opt::MarkerColor(col) => { data.color = *col; },
 
-                    Opt::MarkerSize(si)=> {
-                        data.size = *si;
+                    Opt::MarkerSize(mut si)=> {
+                        si = si.clamp(0.2, 2.0);
+                        data.size = si;
                     },
                     Opt::MarkerStyle(style)=> { data.marker_style = style.clone(); },
                     Opt::MarkerInnerPointColor(col) => { data.marker_point_color = col.clone();},
@@ -525,9 +571,38 @@ impl Plot {
 
     /// Quickly plot data points using segments to connect consecutive points. Takes any type 
     /// that implements Plotable, namely Vec<Vec2>, Vec<(f64, f64)>, Vec<f32>, ...
-    pub fn plot<T: Plotable>(&mut self, v: T) {
+    // pub fn plot<T: Plotable>(&mut self, v: T) {
+    pub fn plot(&mut self, v: impl Plotable) {
         //
         let pf: PlotFormat = v.into_plot_format();
+
+        let data = &pf.data;
+
+        let lo_x = data
+            .iter()
+            .min_by(|q, r| q.x.partial_cmp(&r.x).unwrap())
+            .unwrap().x;
+
+        let lo_y = data
+            .iter()
+            .min_by(|q, r| q.y.partial_cmp(&r.y).unwrap())
+            .unwrap().y;
+
+        let up_x = data
+            .iter()
+            .max_by(|q, r| q.x.partial_cmp(&r.x).unwrap())
+            .unwrap().x;
+        
+        let up_y = data
+            .iter()
+            .max_by(|q, r| q.y.partial_cmp(&r.y).unwrap())
+            .unwrap().y;
+
+        let dx = (up_x - lo_x).abs() * 0.1;
+        let dy = (up_y - lo_y).abs() * 0.1;
+        
+
+        self.set_bounds(Vec2::new(lo_x - dx, lo_y - dy) , Vec2::new(up_x +dx, up_y + dy));
 
         let new_data = SegmentData {
             data: pf.data,
@@ -538,24 +613,57 @@ impl Plot {
         
     }
 
+    // fn vec2_max(v: Vec<Vec2>) -> Vec2 {
+    //     let mut max = Vec2::ZERO;
+    //     use std::cmp::Ordering;
+    // }
+
+
     /// Quickly plot data points using markers (scatter plot). 
     pub fn plotm<T: Plotable>(&mut self, v: T) {
         //
         let pf: PlotFormat = v.into_plot_format();
 
+        let data = pf.data;
+
+        let lo_x = data
+            .iter()
+            .min_by(|q, r| q.x.partial_cmp(&r.x).unwrap())
+            .unwrap().x;
+
+        let lo_y = data
+            .iter()
+            .min_by(|q, r| q.y.partial_cmp(&r.y).unwrap())
+            .unwrap().y;
+
+        let up_x = data
+            .iter()
+            .max_by(|q, r| q.x.partial_cmp(&r.x).unwrap())
+            .unwrap().x;
+        
+        let up_y = data
+            .iter()
+            .max_by(|q, r| q.y.partial_cmp(&r.y).unwrap())
+            .unwrap().y;
+
+        let dx = (up_x - lo_x).abs() * 0.1;
+        let dy = (up_y - lo_y).abs() * 0.1;
+
+        self.set_bounds(Vec2::new(lo_x - dx, lo_y - dy) , Vec2::new(up_x +dx, up_y + dy));
+
+        
         let new_data = MarkerData {
-            data: pf.data,
+            data: data,
             ..Default::default()                   
         };
-        
-        self.data.marker_groups.push(new_data);
 
-        
+        self.data.marker_groups.push(new_data);        
     }
 
-    /// Quickly plot a function by providing said function.
-    pub fn plot_analytical(&mut self, f: fn(f32, f32) -> f32) {
+    /// Quickly plot a function by providing said function. Defaults to a range on the both axes from zero to one.
+    pub fn plot_func(&mut self, f: fn(f32, f32) -> f32) {
         //
+        self.set_bounds(Vec2::ZERO - 0.1, Vec2::ONE + 0.1);
         let new_data = BezierData {
             function: f,
             ..Default::default()
@@ -565,7 +673,7 @@ impl Plot {
     }
 
     /// Plot a function by providing said function and options.
-    pub fn plotopt_analytical(&mut self, f: fn(f32, f32) -> f32, options: Vec<Opt>) {
+    pub fn plotopt_func(&mut self, f: fn(f32, f32) -> f32, options: Vec<Opt>) {
         //
         let mut data = BezierData {
             function: f,

@@ -390,7 +390,7 @@ type DrawSegmentMesh2d = (
 );
 
 /// Plugin that renders [`SegmentMesh2d`]s
-pub struct SegmentMesh2dPlugin;
+pub(crate) struct SegmentMesh2dPlugin;
 
 impl Plugin for SegmentMesh2dPlugin {
     fn build(&self, app: &mut App) {

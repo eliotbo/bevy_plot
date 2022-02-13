@@ -1,5 +1,4 @@
 use bevy::prelude::*;
-
 use bevy_plot::*;
 
 use std::collections::HashMap;
@@ -24,39 +23,32 @@ use bevy_plot::UpdateBezierShaderEvent;
 pub fn change_bezier_metaparameters_at_runtime(
     mut plots: ResMut<Assets<Plot>>,
     query: Query<(Entity, &Handle<Plot>, &BezierCurveNumber)>,
-    mouse_position: Res<Cursor>,
+    mut cursor_moved_events: EventReader<CursorMoved>,
     mouse_button_input: Res<Input<MouseButton>>,
     mut event: EventWriter<UpdateBezierShaderEvent>,
 ) {
-    // for mut custom_uni in query.iter_mut() {
-    for (entity, plot_handle, curve_number) in query.iter() {
-        let plot = plots.get_mut(plot_handle).unwrap();
+    for mouse_motion_event in cursor_moved_events.iter() {
+        for (entity, plot_handle, curve_number) in query.iter() {
+            let plot = plots.get_mut(plot_handle).unwrap();
 
-        let mouse_pos = mouse_position.position;
+            if mouse_button_input.pressed(MouseButton::Right) {
+                if let Some(mut bezier_data) = plot.data.bezier_groups.get_mut(curve_number.0) {
+                    bezier_data.size = mouse_motion_event.position.x / 100.0;
 
-        if mouse_button_input.pressed(MouseButton::Right) {
-            if let Some(mut bezier_data) = plot.data.bezier_groups.get_mut(curve_number.0) {
-                bezier_data.size = mouse_pos.x / 100.0;
-
-                // If show_animation is set to true, UpdateBezierShaderEvent will be sent elsewhere anyway,
-                // so we don't need to send it twice every frame.
-                if !bezier_data.show_animation {
-                    event.send(UpdateBezierShaderEvent {
-                        plot_handle: plot_handle.clone(),
-                        entity,
-                        group_number: curve_number.0,
-                    });
+                    // If show_animation is set to true, UpdateBezierShaderEvent will be sent elsewhere anyway,
+                    // so we don't need to send it twice every frame.
+                    if !bezier_data.show_animation {
+                        event.send(UpdateBezierShaderEvent {
+                            plot_handle: plot_handle.clone(),
+                            entity,
+                            group_number: curve_number.0,
+                        });
+                    }
                 }
             }
         }
     }
 }
-
-// TODO:
-// 2) Area under the curve
-// 3) clean up the code
-// 4) generate the docs
-// 5) Automatically color curve, segments and markers with palette
 
 fn setup(
     mut commands: Commands,
@@ -70,7 +62,7 @@ fn setup(
     let mut plot = Plot::default();
 
     // sine wave
-    plot.plotopt_analytical(
+    plot.plotopt_func(
         f3,
         vec![
             Opt::Size(2.0),

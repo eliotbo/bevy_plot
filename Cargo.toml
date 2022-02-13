@@ -16,8 +16,8 @@ bytemuck = "1.7"
 rand = "0.8"
 
 [[example]]
-name = "showcase"
-path = "examples/showcase.rs"
+name = "bevy"
+path = "examples/bevy.rs"
 
 [[example]]
 name = "markers"
@@ -28,8 +28,8 @@ name = "minimal"
 path = "examples/minimal.rs"
 
 [[example]]
-name = "analytic"
-path = "examples/analytic.rs"
+name = "func"
+path = "examples/func.rs"
 
 [[example]]
 name = "animate"

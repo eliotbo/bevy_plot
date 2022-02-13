@@ -51,7 +51,7 @@ fn setup(
     plot.set_bounds(lower_bound, upper_bound);
 
     // quadratic curve
-    plot.plotopt_analytical(
+    plot.plotopt_func(
         |x: f32, t: f32| 2.0 + x * x * (1.5 + (t * 2.0).sin()),
         vec![
             Opt::LineStyle(LineStyle::Solid),
@@ -62,7 +62,7 @@ fn setup(
     );
 
     // sine wave
-    plot.plotopt_analytical(
+    plot.plotopt_func(
         f3,
         vec![
             Opt::Size(2.0),
@@ -73,7 +73,7 @@ fn setup(
     );
 
     // easing function (typically used in animations)
-    plot.plotopt_analytical(easing_func, vec![Opt::Animate(true)]);
+    plot.plotopt_func(easing_func, vec![Opt::Animate(true)]);
 
     // Dummy entity that will be deleted as soon as its purpose has been served.
     // Required for easy access to the plot handle when spawning the graph,

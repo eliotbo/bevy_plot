@@ -26,6 +26,17 @@ impl Plotable for Vec<(f64, f64)> {
     }
 }
 
+impl Plotable for Vec<(f32, f32)> {
+    fn into_plot_format(&self) -> PlotFormat {
+        PlotFormat {
+            data: self
+                .iter()
+                .map(|(x, y)| Vec2::new(*x as f32, *y as f32))
+                .collect(),
+        }
+    }
+}
+
 impl Plotable for Vec<(i32, i32)> {
     fn into_plot_format(&self) -> PlotFormat {
         PlotFormat {
