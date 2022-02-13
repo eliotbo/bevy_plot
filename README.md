@@ -1,4 +1,6 @@
-# Bevy Plot
+
+![logo](bevy_plot_logo.png)
+
 Plotting library for the Bevy game engine. 
 
 ![animate](stiched.gif)
@@ -6,4 +8,3 @@ Plotting library for the Bevy game engine.
 ## How to get started
 
 ![bevy](bevy0.png)
-
