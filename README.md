@@ -1,5 +1,5 @@
 
-![logo](bevy_plot_logo.png)
+![logo](bevy_plot_log.png)
 
 Plotting library for the Bevy game engine.
 
