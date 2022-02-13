@@ -2,15 +2,12 @@
 name = "bevy_plot"
 version = "0.1.0"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+authors = ["Eliot Bolduc"]
+description = "A Bevy plugin for plotting data and explicit functions."
+license = "MIT or Apache-2.0"
 
 [dependencies]
-# bevy = "0.6" #{path = "crates/bevy_fork" }
-
-bevy = { git = "https://github.com/bevyengine/bevy.git", rev = "33ef5b5039ce4bea9b33199c1e5649dc858a6d4c" }
-# lyon = "0.17.5"
-# flo_curves = "0.6"
+bevy = { git = "https://github.com/bevyengine/bevy.git", version = "0.6", rev = "e749ee786c3a3ca11718b08f0545aa90e4b5aae6" }
 itertools-num = "0.1"
 bytemuck = "1.7"
 rand = "0.8"
