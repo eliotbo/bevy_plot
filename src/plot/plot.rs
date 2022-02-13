@@ -120,6 +120,14 @@ fn do_spawn_plot(
     }
 }
 
+/// Upon modifying any of the plot fields, use this event to update the the view (shaders).
+/// For updating a scatter plot (markers) or a regular plot (segments), send
+/// the RespawnAllEvent event. This will despawn all the entities and respawn
+/// them with the updated information.
+pub struct RespawnAllEvent {
+    pub plot_handle: Handle<Plot>,
+}
+
 /// See the `animate.rs` example, where ```UpdateBezierShaderEvent``` is used to tell bevy_plot that
 /// the the ```BezierCurveUniform``` needs to be updated.
 pub struct UpdateBezierShaderEvent {
@@ -669,7 +677,8 @@ impl Plot {
     /// Quickly plot a function by providing said function. Defaults to a range on the both axes from zero to one.
     pub fn plot_func(&mut self, f: fn(f32, f32) -> f32) {
         //
-        self.set_bounds(Vec2::ZERO - 0.1, Vec2::ONE + 0.1);
+        // self.set_bounds(Vec2::ZERO - 0.1, Vec2::ONE + 0.1);
+
         let new_data = BezierData {
             function: f,
             ..Default::default()

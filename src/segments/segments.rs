@@ -24,11 +24,10 @@ use bevy::{
     },
 };
 
-use crate::canvas::RespawnAllEvent;
 use crate::plot::*;
 use crate::util::*;
 
-// TODO: circular ends in mesh
+// TODO: circular ends in mesh and/or linear joints
 
 pub(crate) fn segments_setup(
     mut commands: Commands,

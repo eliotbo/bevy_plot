@@ -27,7 +27,6 @@ use bevy::{
 
 use bytemuck::{Pod, Zeroable};
 
-use crate::canvas::RespawnAllEvent;
 use crate::plot::*;
 use crate::util::*;
 

@@ -22,22 +22,11 @@ use bevy::{
 use crate::plot::*;
 use crate::util::*;
 
-pub(crate) struct RespawnAllEvent {
-    pub plot_handle: Handle<Plot>,
-    // pub canvas_material_handle: Handle<CanvasMaterial>,
-}
-
 #[derive(Component)]
 pub(crate) struct PlotLabel;
 
 #[derive(Component)]
 pub(crate) struct TargetLabel;
-
-// #[derive(Debug, Clone, AsStd140)]
-// pub struct GraphSize {
-//     pub size: Vec2,
-//     pub outer_border: Vec2,
-// }
 
 pub(crate) struct SpawnGraphEvent {
     pub plot_handle: Handle<Plot>,

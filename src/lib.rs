@@ -1,6 +1,6 @@
 // #![warn(missing_docs)]
 
-//! Plotting library for the Bevy game engine. To get started quickly, run a Bevy ```App```, instantiate
+//! Plotting library for the Bevy game engine. To quickly get started, run a Bevy ```App```, instantiate
 //! a ```Plot``` struct, and either use the
 //! *  ```plot(my_data: impl Plotable)``` method for a regular graph or the
 //! * ```plotm(my_data: impl Plotable)``` method for a scatter plot (or plot with markers) or the
@@ -51,24 +51,16 @@
 //!
 //! Note that the library allows the user to
 //! * zoom in and out with the mousewheel,
-//! * pan with the mouse by pressing and dragging,
-//! * spawn a target and the corresponding coordinates using the Mouse::Middle button, and
-//! * change the Plot fields at runtime.
+//! * move the origin with the mouse by pressing and dragging,
+//! * spawn a target and the corresponding coordinates by pressing the Mouse::Middle button, and
+//! * change the Plot fields at runtime (see examples/runtime_setter.rs).
 
 mod plot;
 pub use plot::*;
 
-mod canvas;
-// pub use canvas::*;
-
-mod markers;
-// pub use markers::*;
-
 mod bezier;
-// pub use bezier::*;
-
-mod segments;
-// pub use segments::*;
-
+mod canvas;
 mod inputs;
+mod markers;
+mod segments;
 mod util;

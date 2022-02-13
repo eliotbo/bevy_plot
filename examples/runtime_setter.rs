@@ -44,6 +44,10 @@ pub fn change_bezier_metaparameters_at_runtime(
                             group_number: curve_number.0,
                         });
                     }
+
+                    // For updating a scatter plot (markers) or a regular plot (segments), send
+                    // the RespawnAllEvent event. This will despawn all the entities and respawn
+                    // them with the updated information.
                 }
             }
         }

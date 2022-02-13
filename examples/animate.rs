@@ -30,8 +30,8 @@ fn setup(
     let colors = colors_res.as_ref();
 
     let mut plot = Plot::default();
-
-    plot.canvas_size = Vec2::new(802.0, 602.0) / (1.0 - plot.outer_border);
+    plot.canvas_size = Vec2::new(790.0, 590.0);
+    // plot.canvas_size = Vec2::new(802.0, 602.0) / (1.0 - plot.outer_border);
 
     plot.show_axes = false;
     plot.show_grid = false;
@@ -85,7 +85,7 @@ fn setup(
 
 pub fn f3(x: f32, t: f32) -> f32 {
     let freq = 5.0;
-    let y = (x * freq + t * 5.0).sin() / 2.0 + 5.0;
+    let y = (x * freq + t * 2.0).sin() / 2.0 + 5.0;
     return y;
 }
 
@@ -99,7 +99,11 @@ pub fn easing_func(x: f32, t: f32) -> f32 {
     let expo: f32 = 4.1 + (t * 2.0).sin() * 3.0;
 
     let xp = (x - start_point.x) / (end_point.x - start_point.x);
-    let f = y_max - (1.0 - xp).signum() * (1.0 - xp).abs().powf(expo) * (y_max - y_min);
+    let mut sign = (1.0 - xp).signum();
+    if sign == 0.0 {
+        sign = 1.0;
+    }
+    let f = y_max - sign * (1.0 - xp).abs().powf(expo) * (y_max - y_min);
 
     return f;
 }
