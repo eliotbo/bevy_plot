@@ -1,7 +1,7 @@
 // #![warn(missing_docs)]
 
-//! Plotting library for the Bevy game engine. To quickly get started, run a Bevy ```App```, instantiate
-//! a ```Plot``` struct, and either use the
+//! Plotting library for the Bevy game engine. To quickly get started, run a Bevy ```App```, add the
+//! ```PlotPlugin``` to the ```App```, instantiate a ```Plot``` struct, and either use the
 //! *  ```plot(my_data: impl Plotable)``` method for a regular graph or the
 //! * ```plotm(my_data: impl Plotable)``` method for a scatter plot (or plot with markers) or the
 //! * ```plot_func(arg: fn(f32, f32) -> 32)``` method that supports plotting of explicit functions.

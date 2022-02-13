@@ -1,4 +1,4 @@
-## Examples
+# Examples
 
 The bevy.rs example should yield the following:
 
