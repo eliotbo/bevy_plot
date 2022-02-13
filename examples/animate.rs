@@ -13,6 +13,7 @@ fn main() {
             height: 600.,
             ..Default::default()
         })
+        .insert_resource(ClearColor(Color::rgba(0.0, 0.0, 0.0, 0.0)))
         .add_plugins(DefaultPlugins)
         .add_plugin(PlotPlugin)
         .add_startup_system(setup)
