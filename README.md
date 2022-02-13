@@ -1,7 +1,8 @@
-# bevy_plot
-plotting library in the Bevy game engine. Under construction
+# Bevy Plot
+Plotting library for the Bevy game engine. 
 
 ![animate](stiched.gif)
 
+## How to get started
 
 ![bevy](bevy0.png)
