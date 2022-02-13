@@ -1,15 +1,11 @@
 use bevy::{
     input::mouse::{MouseMotion, MouseWheel},
     prelude::*,
-    // render::camera::OrthographicProjection,
     sprite::{MaterialMesh2dBundle, Mesh2dHandle},
 };
 
 use crate::canvas::*;
 use crate::inputs::*;
-// use crate::markers::SpawnMarkersEvent;
-
-// use crate::plot_canvas_plugin::UpdateShadersEvent;
 
 use crate::canvas::RespawnAllEvent;
 use crate::util::*;
@@ -28,11 +24,6 @@ fn spawn_axis_tick_labels(
     h_align: HorizontalAlign,
     font_color: Color,
 ) {
-    // let font_color = Color::BLACK;
-    // if text == "0.00" || text == "0.0" {
-    //     font_color = Color::DARK_GRAY;
-    // }
-    // let font = asset_server.load("fonts/FiraMono-Medium.ttf");
     let font = asset_server.load("fonts/Roboto-Bold.ttf");
     let text_style = TextStyle {
         font,
@@ -400,7 +391,7 @@ pub(crate) fn spawn_graph(
         });
 
         change_canvas_material_event.send(RespawnAllEvent {
-            canvas_material_handle: canvas_material_handle.clone(),
+            // canvas_material_handle: canvas_material_handle.clone(),
             plot_handle: plot_handle.clone(),
         });
 
@@ -703,7 +694,7 @@ pub(crate) fn adjust_graph_axes(
 
                 change_canvas_material_event.send(RespawnAllEvent {
                     plot_handle: plot_handle.clone(),
-                    canvas_material_handle: material_handle.clone(),
+                    // canvas_material_handle: material_handle.clone(),
                 });
 
                 plot.data
@@ -768,7 +759,7 @@ pub(crate) fn adjust_graph_axes(
 
         change_canvas_material_event.send(RespawnAllEvent {
             plot_handle: plot_handle.clone(),
-            canvas_material_handle: material_handle.clone(),
+            // canvas_material_handle: material_handle.clone(),
         });
     }
 }

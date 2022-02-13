@@ -5,6 +5,7 @@ use bevy::{
 
 use super::plot_format::*;
 use super::colors::make_color_palette;
+
 use crate::canvas::*;
 use crate::bezier::*;
 
@@ -30,6 +31,7 @@ pub struct PlotPlugin;
 // 2) Automatically color curve, segments and markers with palette
 // 3) Global variable for z planes
 // 4) optimize
+// 5) add 3d mesh materials
 
 impl Plugin for PlotPlugin {
     fn build(&self, app: &mut App) {
@@ -131,10 +133,14 @@ pub(crate) struct WaitForUpdatePlotLabelsEvent {
     pub quad_entity: Entity,
 }
 
+/// Component inserted in the entity corresponding to the nth curve group in ```Plot.data.bezier_groups```
+#[derive(Component)]
+pub struct BezierCurveNumber(pub usize);
+
 /// Lower and upper bounds for the canvas. The `x` axis ranges from lo.x to up.x and 
 /// the `y` axis ranges from lo.y to up.y.
 #[derive(Debug, Clone, AsStd140)]
-pub struct PlotCanvasBounds {
+pub(crate) struct PlotCanvasBounds {
     pub up: Vec2,
     pub lo: Vec2,
 }
@@ -374,7 +380,7 @@ pub struct Plot {
     /// mouse position in the reference frame of the graph, corresponding to its axes
     pub plot_coord_mouse_pos: Vec2,
 
-    /// canvas related
+    /// Position of the canvas in World coordinates
     pub canvas_position: Vec2,
 
     /// Distance between consecutive grid lines
@@ -787,6 +793,13 @@ impl Plot {
     /// Beware! The tick period is automatically adjusted. Changing the tick period before setting the bounds will not have the intended effect.
     /// The bounds must be set before the ticks.
     pub fn set_bounds(&mut self, lo: Vec2, up: Vec2) {
+
+        if lo.x >= up.x {
+            panic!("when using plot.set_bounds(), lo.x must be strictly less than up.x");
+        } else if lo.y >= up.y {
+            panic!("when using plot.set_bounds(), lo.y must be strictly less than up.y");
+        };
+
         self.bounds = PlotCanvasBounds {
             lo,
             up,

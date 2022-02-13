@@ -1,4 +1,4 @@
-pub mod colors;
+mod colors;
 pub mod plot;
 pub mod plot_format;
 

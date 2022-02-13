@@ -115,7 +115,7 @@ pub(crate) fn make_df(xs: &Vec<f32>, time: f32, f: &fn(f32, f32) -> f32) -> (Vec
 
 /// Uniform sent to bezier_spline.wgsl
 #[derive(Component, Clone, AsStd140)]
-pub struct BezierCurveUniform {
+pub(crate) struct BezierCurveUniform {
     /// If set to > 0.5, the curve will be split into mechanical joints, but it's just a look
     pub mech: f32,
     pub zoom: f32,
@@ -435,10 +435,6 @@ fn plot_fn(
             });
     }
 }
-
-/// Component inserted in the entity corresponding to the kth curve group in Plot.data.bezier_groups.
-#[derive(Component)]
-pub struct BezierCurveNumber(pub usize);
 
 /// A marker component for colored 2d meshes
 #[derive(Component, Default)]

@@ -223,7 +223,7 @@ pub(crate) struct SegmentMesh2d;
 
 /// Shader uniform parameters sent to segments.wgsl.
 #[derive(Component, Clone, AsStd140)]
-pub struct SegmentUniform {
+pub(crate) struct SegmentUniform {
     pub color: Vec4,
     /// gives segments a mechanical joint look if > 0.5
     pub mech: f32,

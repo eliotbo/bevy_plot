@@ -136,14 +136,14 @@ pub(crate) struct MarkerMesh2d;
 
 /// Uniform sent to markers.wgsl
 #[derive(Component, Clone, AsStd140)]
-pub struct MarkerUniform {
+pub(crate) struct MarkerUniform {
     pub marker_size: f32,
     /// When the ```marker_point_color``` field is different from the ```color``` field,
     /// there is a small visible circle within the marker. ```hole_size``` controls the size of the circle.
     pub hole_size: f32,
     pub zoom: f32,
     pub marker_type: i32,
-    /// Size of the size of the instanced square quad for one marker.
+    /// Size of the instanced square quad for one marker.
     pub quad_size: f32,
 
     /// Shows a black contour around the marker if the value is > 0.5.

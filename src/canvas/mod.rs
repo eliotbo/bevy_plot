@@ -22,9 +22,9 @@ use bevy::{
 use crate::plot::*;
 use crate::util::*;
 
-pub struct RespawnAllEvent {
+pub(crate) struct RespawnAllEvent {
     pub plot_handle: Handle<Plot>,
-    pub canvas_material_handle: Handle<CanvasMaterial>,
+    // pub canvas_material_handle: Handle<CanvasMaterial>,
 }
 
 #[derive(Component)]
@@ -200,7 +200,7 @@ pub(crate) struct UpdateTargetLabelEvent {
 #[derive(TypeUuid, Debug, Clone, Component, AsStd140)]
 #[uuid = "1e08866c-0b8a-437e-8bae-38844b21137e"]
 #[allow(non_snake_case)]
-pub struct CanvasMaterial {
+pub(crate) struct CanvasMaterial {
     /// Mouse position in the reference frame of the graph, corresponding to its axes coordinates
     pub mouse_pos: Vec2,
     pub tick_period: Vec2,
@@ -290,7 +290,7 @@ impl CanvasMaterial {
 }
 
 #[derive(Clone)]
-pub struct GpuCanvasMaterial {
+pub(crate) struct GpuCanvasMaterial {
     _buffer: Buffer,
     bind_group: BindGroup,
 }

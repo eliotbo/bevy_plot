@@ -3,11 +3,14 @@
 //! Plotting library for the Bevy game engine. To get started quickly, run a Bevy ```App```, instantiate
 //! a ```Plot``` struct, and either use the
 //! *  ```plot(my_data: impl Plotable)``` method for a regular graph or the
-//! * ```plotm(my_data: impl Plotable)``` method for a scatter plot (or plot with markers).
+//! * ```plotm(my_data: impl Plotable)``` method for a scatter plot (or plot with markers) or the
+//! * ```plot_func(arg: fn(f32, f32) -> 32)``` method that supports plotting of explicit functions.
 //!
-//! The ```my_data``` argument of either method has to implement the ```Plotable``` trait
-//! (e.g. ```Vec<Vec2>```, ```Vec<(f32, f32)>```, ```Vec<f32>```, etc.).
+//! The ```my_data``` argument of either of the first two methods has to implement the ```Plotable``` trait
+//! (e.g. ```Vec<Vec2>```, ```Vec<(f32, f32)>```, ```Vec<f32>```, etc.). In the third option, the
+//! argument ```arg``` is a function that takes two arguments (x and time) and returns a ```f32```.
 //!
+//! The following code can be found in examples/minimal.rs:
 //! ```
 //!  use bevy::prelude::*;
 //!  use bevy_plot::*;
@@ -37,27 +40,35 @@
 //!      let plot_handle = plots.add(plot.clone());
 //!      commands.spawn().insert(plot_handle);
 //!  }
-//!  ```
-//! This library also supports plotting of explicit functions through the ```plot_func(arg: fn(f32, f32) -> 32)``` method,
-//! where ```arg``` is a function that takes two arguments (x and time) and returns a ```f32```.
+//! ```
 //!
-//! For customizing the look of the graph, see the ```Opt``` enum for the available options and the ```plotopt``` and
-//! ```plotopt_func``` methods.
+//!
+//! For customizing the look of the curves and markers, see the ```Opt``` enum for the
+//! available options together with the ```plotopt``` and
+//! ```plotopt_func``` methods. For customizing the canvas (grid, colors, etc...), see the ```Plot``` fields.
+//! Setting the range of the x and y axes is done with the ```set_bounds(lo, up)``` method, but bevy_plot
+//! panics if lo.x > up.x or lo.y > up.y.
+//!
+//! Note that the library allows the user to
+//! * zoom in and out with the mousewheel,
+//! * pan with the mouse by pressing and dragging,
+//! * spawn a target and the corresponding coordinates using the Mouse::Middle button, and
+//! * change the Plot fields at runtime.
 
 mod plot;
 pub use plot::*;
 
 mod canvas;
-pub use canvas::*;
+// pub use canvas::*;
 
 mod markers;
-pub use markers::*;
+// pub use markers::*;
 
 mod bezier;
-pub use bezier::*;
+// pub use bezier::*;
 
 mod segments;
-pub use segments::*;
+// pub use segments::*;
 
 mod inputs;
 mod util;
