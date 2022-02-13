@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 authors = ["Eliot Bolduc"]
 description = "A Bevy plugin for plotting data and explicit functions."
-license = "MIT or Apache-2.0"
+license = "MIT"
 
 [dependencies]
 bevy = { git = "https://github.com/bevyengine/bevy.git", version = "0.6", rev = "e749ee786c3a3ca11718b08f0545aa90e4b5aae6" }
