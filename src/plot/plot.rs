@@ -128,8 +128,8 @@ pub struct RespawnAllEvent {
     pub plot_handle: Handle<Plot>,
 }
 
-/// See the `animate.rs` example, where ```UpdateBezierShaderEvent``` is used to tell bevy_plot that
-/// the the ```BezierCurveUniform``` needs to be updated.
+/// See the animate.rs example, where [`UpdateBezierShaderEvent`] is used to tell bevy_plot that
+/// the view for an explicit function needs to be updated.
 pub struct UpdateBezierShaderEvent {
     pub plot_handle: Handle<Plot>,
     pub entity: Entity,
@@ -141,12 +141,13 @@ pub(crate) struct WaitForUpdatePlotLabelsEvent {
     pub quad_entity: Entity,
 }
 
-/// Component inserted in the entity corresponding to the nth curve group in ```Plot.data.bezier_groups```
+/// Component that serves as identification for the nth curve group of the `bezier_groups` field
+/// of [`PlotData`].
 #[derive(Component)]
 pub struct BezierCurveNumber(pub usize);
 
-/// Lower and upper bounds for the canvas. The `x` axis ranges from lo.x to up.x and 
-/// the `y` axis ranges from lo.y to up.y.
+/// Lower and upper bounds for the canvas. The x axis (or horizontal axis) ranges from `lo.x` to `up.x` and 
+/// the `y` axis ranges from `lo.y` to `up.y`.
 #[derive(Debug, Clone, AsStd140)]
 pub(crate) struct PlotCanvasBounds {
     pub up: Vec2,
@@ -155,7 +156,7 @@ pub(crate) struct PlotCanvasBounds {
 
 #[derive(Debug, Clone)]
 /// Struct containing the data to be plotted and metaparameters of any explicit function plot. 
-/// It can be found in  the ```data.bezier_groups``` field of a Plot. The reason for its name is
+/// It can be found in  the `data.bezier_groups` sub-field of a [`Plot`]. The reason for its name is
 /// that bevy_plot interpolates between samples of the function using quadratic bezier curves.
 pub struct BezierData {
     /// Function to be displayed
@@ -175,7 +176,7 @@ pub struct BezierData {
     /// function with quadratic interpolation between each sample
     pub num_points: usize,
 
-    /// If true, bevy_plot recomputes the ```function``` field every frame
+    /// If true, bevy_plot recomputes the `function` field every frame
     pub show_animation: bool,
 }
 
@@ -195,7 +196,7 @@ impl Default for BezierData {
 
 
 /// Struct containing the data to be plotted and metaparameters of a marker (or scatter) plot.
-/// It can be found in the ```data.marker_groups``` field of a Plot.
+/// It can be found in the `data.marker_groups` sub-field of a [`Plot`].
 #[derive(Debug, Clone)]
 pub struct MarkerData {
     /// The data to be displayed in the scatter plot
@@ -231,7 +232,7 @@ impl Default for MarkerData {
 }
 
 /// Struct containing the data to be plotted and metaparameters of a segment (or regular) plot.
-/// It can be found in  the ```data.segment_groups``` field of a Plot.
+/// It can be found in  the `data.segment_groups` sub-field of a [`Plot`].
 #[derive(Debug, Clone)]
 pub struct SegmentData {
     /// The data to be displayed in the regular plot
@@ -240,6 +241,7 @@ pub struct SegmentData {
     pub color: Color,
     /// Thickness of the segments
     pub size: f32,
+    /// If the `line_style` is set to `LineStyle::None`, the segments are not drawn
     pub line_style: LineStyle,
     pub draw_contour: bool,
     pub mech: bool,
@@ -258,7 +260,7 @@ impl Default for SegmentData {
     }
 }
 
-/// The data for each type of plot has to be accessed though this struct first. Each element of a ```Vec``` 
+/// The data for each type of plot has to be accessed though this struct first. Each element of a `Vec`
 /// corresponds to a particular curve on the graph.
 #[derive(Debug, Clone)]
 pub struct PlotData {
@@ -341,13 +343,13 @@ impl LineStyle {
 #[derive(Debug, Clone, PartialEq)]
 // Options as the second argument the of plotop method
 pub enum Opt {
-    /// Main color. Shared between plotopt_func() and plotopt()
+    /// Main color. Shared between [`Plot::plotopt_func`]` and [`Plot::plotopt`]
     Color(Color),
 
-    /// Thickness of a curve or segment. Shared between plotopt_func() and plotopt()
+    /// Thickness of a curve or segment. Shared between [`Plot::plotopt_func`]` and [`Plot::plotopt`]
     Size(f32),
 
-    /// Either ```LineStyle::None``` or ```LineStyle::Solid```. The former can be used to
+    /// Either [`LineStyle::None`] or [`LineStyle::Solid`]. The former can be used to
     /// avoid spawning either the segments or the bezier curves, depending on the type of plot.
     LineStyle(LineStyle),
 
@@ -356,10 +358,10 @@ pub enum Opt {
     Mech(bool),
     
     /// Determines the number of separate parts in a func plot. 
-    /// Works with plotopt_func() only.
+    /// Works with [`Plot::plotopt`] only.
     NumPoints(usize),
 
-    /// If true, bevy_plot computes the ```function``` field of BezierData at every frame.
+    /// If true, bevy_plot computes the `function` field of [`BezierData`] at every frame.
     /// Needs to be used in conjunction with a function that explicitly depends on time.
     Animate(bool),
 
@@ -373,7 +375,7 @@ pub enum Opt {
     MarkerStyle(MarkerStyle),
 
     /// Color of the tiny circle centered exactly at the data point. To turn this features off,
-    /// simply chose the same color as the MarkerColor.
+    /// simply chose the same color as the `MarkerColor`.
     MarkerInnerPointColor(Color),
 
     /// If true, the markers are displayed with a black border.
@@ -388,13 +390,13 @@ pub struct Plot {
     /// mouse position in the reference frame of the graph, corresponding to its axes
     pub plot_coord_mouse_pos: Vec2,
 
-    /// Position of the canvas in World coordinates
+    /// Position of the canvas in `World` coordinates
     pub canvas_position: Vec2,
 
     /// Distance between consecutive grid lines
     pub tick_period: Vec2,
     
-    /// Size of the margins with respect to the canvas_size. The default is set to ``` Vec2::new(0.03 * size.y / size.x, 0.03) ```
+    /// Size of the margins with respect to the canvas_size. The default is set to `Vec2::new(0.03 * size.y / size.x, 0.03)`
     pub outer_border: Vec2,
 
     /// Size of the graph in pixels
@@ -409,13 +411,13 @@ pub struct Plot {
     /// The grid is shown by default
     pub show_grid: bool,
 
-    /// Position of the origin of the graph in World coordinates
+    /// Position of the origin of the graph in `World` coordinates
     pub zero_world: Vec2,
 
     /// unused
     pub time: f32,
 
-    /// The current zoom value: adjustable with the MouseWheel
+    /// The current zoom value: adjustable with the `MouseWheel`
     pub zoom: f32,
 
     /// Hides the black contour around the canvas
@@ -433,7 +435,7 @@ pub struct Plot {
     /// Adjusts the number of significant digits for the tick labels
     pub significant_digits: usize,
 
-    /// A target can be spawned together with a pair of coordinates by pressing MouseButton::Middle
+    /// A target can be spawned together with a pair of coordinates by pressing `MouseButton::Middle`
     pub show_target: bool,
 
     /// The color for the coordinate pair by the side of the target
@@ -448,10 +450,10 @@ pub struct Plot {
     /// Axes are shown by default
     pub show_axes: bool,
 
-    /// Only related to the plot_func() and plotopt_func() functions
+    /// The number of samples taken on the explicit function provided to [`Plot::plot_func`]` or [`Plot::plotopt_func`] functions
     pub bezier_num_points: usize,
 
-    /// Contains the data and metaparameters needed by the bezier, segments and markers folders
+    /// Contains the data and metaparameters needed for drawing each kind of plot
     pub data: PlotData,
     
     pub(crate) target_position: Vec2,
@@ -517,8 +519,8 @@ impl Default for Plot {
 
 
 impl Plot {
-    /// Customizable plotting function. Takes any type that implements Plottable, namely 
-    ///  Vec<Vec2>, Vec<(f64, f64)>, Vec<f32>, ...
+    /// Customizable plotting function. Takes any type that implements [`Plotable`], namely 
+    ///  `Vec<Vec2>`, `Vec<(f64, f64)>`, `Vec<f32>`, ...
     pub fn plotopt<T: Plotable>(&mut self, v: T, options: Vec<Opt>) {
         //
         let data_in_plot_format: PlotFormat = v.into_plot_format();
@@ -584,8 +586,7 @@ impl Plot {
     } 
 
     /// Quickly plot data points using segments to connect consecutive points. Takes any type 
-    /// that implements Plotable, namely Vec<Vec2>, Vec<(f64, f64)>, Vec<f32>, ...
-    // pub fn plot<T: Plotable>(&mut self, v: T) {
+    /// that implements [`Plotable`], namely `Vec<Vec2>`, `Vec<(f64, f64)>`, `Vec<f32>`, ...
     pub fn plot(&mut self, v: impl Plotable) {
         //
         let pf: PlotFormat = v.into_plot_format();
@@ -626,12 +627,6 @@ impl Plot {
         self.data.segment_groups.push(new_data);
         
     }
-
-    // fn vec2_max(v: Vec<Vec2>) -> Vec2 {
-    //     let mut max = Vec2::ZERO;
-    //     use std::cmp::Ordering;
-    // }
-
 
     /// Quickly plot data points using markers (scatter plot). 
     pub fn plotm<T: Plotable>(&mut self, v: T) {
@@ -674,10 +669,9 @@ impl Plot {
         self.data.marker_groups.push(new_data);        
     }
 
-    /// Quickly plot a function by providing said function. Defaults to a range on the both axes from zero to one.
+    /// Quickly plot a function by providing said function. Defaults to a range on the both axes from `-0.2` to `1.2`.
     pub fn plot_func(&mut self, f: fn(f32, f32) -> f32) {
         //
-        // self.set_bounds(Vec2::ZERO - 0.1, Vec2::ONE + 0.1);
 
         let new_data = BezierData {
             function: f,
@@ -801,6 +795,10 @@ impl Plot {
     /// Override the default plot bounds: x axis goes from bounds.lo.x to bounds.up.x. 
     /// Beware! The tick period is automatically adjusted. Changing the tick period before setting the bounds will not have the intended effect.
     /// The bounds must be set before the ticks.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `lo.x >= up.x` or `lo.y >= up.y`.
     pub fn set_bounds(&mut self, lo: Vec2, up: Vec2) {
 
         if lo.x >= up.x {

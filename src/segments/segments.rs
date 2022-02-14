@@ -44,15 +44,9 @@ pub(crate) fn segments_setup(
             }
         }
 
-        let mut plot = plots.get_mut(&event.plot_handle).unwrap();
-
-        plot_segments(
-            &mut commands,
-            &mut meshes,
-            // ys,
-            &mut plot,
-            &event.plot_handle,
-        )
+        if let Some(mut plot) = plots.get_mut(&event.plot_handle) {
+            plot_segments(&mut commands, &mut meshes, &mut plot, &event.plot_handle)
+        }
     }
 }
 

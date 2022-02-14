@@ -18,7 +18,7 @@ fn setup(mut commands: Commands, mut plots: ResMut<Assets<Plot>>) {
 
     let ys = xs
         .iter()
-        .map(|x| Vec2::new(*x, 0.5 * *x))
+        .map(|x| Vec2::new(*x, 0.5 * x))
         .collect::<Vec<Vec2>>();
 
     plot.plot(ys);
