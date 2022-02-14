@@ -11,20 +11,17 @@ repository = "https://github.com/eliotbo/bevy_plot"
 categories = [
     "visualization", "game-engines", "game-development", "mathematics", "science"
 ]
+# exclude = [
+#     "*.png",
+#     "*.gif",
+#     "examples/*.png",
+# ]
 
 [dependencies]
-# bevy = { git = "https://github.com/bevyengine/bevy.git", version = "0.6", rev = "e749ee786c3a3ca11718b08f0545aa90e4b5aae6" }
-# bevy = { version = "0.6.0", default-features = false, features = ["render"] }
-
 bevy = "0.6"
 itertools-num = "0.1"
 bytemuck = "1.7"
 rand = "0.8"
-
-# [dependencies.bevy]
-# version = "0.6.0"
-# default-features = false
-# # features = ["render"]
 
 [features]
 default = []
