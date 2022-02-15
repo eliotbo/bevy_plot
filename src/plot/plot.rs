@@ -122,7 +122,7 @@ fn do_spawn_plot(
 
 /// Upon modifying any of the plot fields, use this event to update the the view (shaders).
 /// For updating a scatter plot (markers) or a regular plot (segments), send
-/// the RespawnAllEvent event. This will despawn all the entities and respawn
+/// the RespawnAllEvent event. Bevy Plot will then despawn all the entities and respawn
 /// them with the updated information.
 pub struct RespawnAllEvent {
     pub plot_handle: Handle<Plot>,
