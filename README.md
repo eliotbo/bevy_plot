@@ -1,5 +1,5 @@
 
-![logo](bevy_plot_log.png)
+![logo](bevy_plot_log2.png)
 
 Plotting library for the Bevy game engine with a focus on esthetics and interactivity. It can handle both data points (see the "minimal", "markers", and "bevy" examples) and explicit functions (see the "func", "animate" and "runtime_setter" examples). Explicit functions are rendered using quadratic Bezier interpolation, thus smoothing out the curves. 
 
