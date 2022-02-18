@@ -201,7 +201,7 @@ impl FromWorld for MarkerMesh2dPipeline {
         let world = world.cell();
         let asset_server = world.get_resource::<AssetServer>().unwrap();
 
-        let shader = asset_server.load("shaders/markers.wgsl");
+        let shader = asset_server.load("../assets/shaders/markers.wgsl");
 
         let _result = asset_server.watch_for_changes();
 

@@ -265,7 +265,7 @@ impl FromWorld for SegmentMesh2dPipeline {
         let world = world.cell();
         let asset_server = world.get_resource::<AssetServer>().unwrap();
 
-        let shader_handle = asset_server.load("shaders/segments.wgsl");
+        let shader_handle = asset_server.load("../assets/shaders/segments.wgsl");
 
         Self {
             view_layout: mesh2d_pipeline.view_layout,

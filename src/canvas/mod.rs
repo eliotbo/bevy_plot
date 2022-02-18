@@ -287,7 +287,7 @@ pub(crate) struct GpuCanvasMaterial {
 impl Material2d for CanvasMaterial {
     fn fragment_shader(asset_server: &AssetServer) -> Option<Handle<Shader>> {
         asset_server.watch_for_changes().unwrap();
-        Some(asset_server.load("shaders/plot_canvas.wgsl"))
+        Some(asset_server.load("../assets/shaders/plot_canvas.wgsl"))
     }
 
     fn bind_group(render_asset: &<Self as RenderAsset>::PreparedAsset) -> &BindGroup {

@@ -477,7 +477,7 @@ impl FromWorld for BezierMesh2dPipeline {
         let world = world.cell();
         let asset_server = world.get_resource::<AssetServer>().unwrap();
 
-        let shader_handle = asset_server.load("shaders/bezier_spline.wgsl");
+        let shader_handle = asset_server.load("../assets/shaders/bezier_spline.wgsl");
 
         Self {
             view_layout: mesh2d_pipeline.view_layout,
