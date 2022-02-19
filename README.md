@@ -9,7 +9,7 @@ Here is a link to the [docs](https://docs.rs/bevy_plot/0.1.3/bevy_plot/).
 
 ## How to get started
 
-Add "bevy_plot" to the dependencies list in the Cargo.toml file of your project, and have a look at the [examples](https://github.com/eliotbo/bevy_plot/tree/main/examples) to see how to add the PlotPlugin, import and use the Plot asset.
+Add "bevy_plot" to the dependencies list in the Cargo.toml file of your project, add a font to your assets, and have a look at the [examples](https://github.com/eliotbo/bevy_plot/tree/main/examples) to see how to add the PlotPlugin, import and use the Plot asset.
 
 ## TODO
 
