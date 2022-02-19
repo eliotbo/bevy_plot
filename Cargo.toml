@@ -1,6 +1,6 @@
 [package]
 name = "bevy_plot"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 authors = ["Eliot Bolduc"]
 description = "A Bevy plugin for plotting data and explicit functions."

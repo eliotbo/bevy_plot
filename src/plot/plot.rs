@@ -122,7 +122,8 @@ fn do_spawn_plot(
     }
 }
 
-/// Handle to the type of font to use for tick labels (optional)
+/// Handle to the type of font to use for tick labels. If None is given (default), 
+/// the tick labels are not rendered.
 pub struct TickLabelFont {
     pub maybe_font: Option<Handle<Font>>,
 }
