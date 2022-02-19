@@ -16,12 +16,17 @@ fn main() {
         .run();
 }
 
+// MouseButton::Middle toggles a target with x/y labels at the position of the mouse
 fn setup(
     mut commands: Commands,
     colors_res: Res<HashMap<PlotColor, Vec<Color>>>,
     mut plots: ResMut<Assets<Plot>>,
+    asset_server: Res<AssetServer>,
+    mut maybe_font: ResMut<TickLabelFont>,
 ) {
     commands.spawn_bundle(OrthographicCameraBundle::new_2d());
+    let font: Handle<Font> = asset_server.load("fonts/Roboto-Bold.ttf");
+    maybe_font.maybe_font = Some(font);
 
     let mut plot = Plot::default();
 

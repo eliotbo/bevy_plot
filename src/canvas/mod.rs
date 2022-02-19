@@ -284,10 +284,33 @@ pub(crate) struct GpuCanvasMaterial {
     bind_group: BindGroup,
 }
 
+pub(crate) struct CanvasMesh2dPlugin;
+
+pub const CANVAS_SHADER_HANDLE: HandleUntyped =
+    HandleUntyped::weak_from_u64(Shader::TYPE_UUID, 11248119131354745027);
+
+impl Plugin for CanvasMesh2dPlugin {
+    fn build(&self, app: &mut App) {
+        // let mut shaders = world.get_resource_mut::<Assets<Shader>>().unwrap();
+        let mut shaders = app.world.get_resource_mut::<Assets<Shader>>().unwrap();
+
+        let handle_untyped = CANVAS_SHADER_HANDLE.clone();
+
+        shaders.set_untracked(
+            handle_untyped.clone(),
+            Shader::from_wgsl(include_str!("canvas.wgsl")),
+        );
+
+        // // at the moment, there seems to be no way to include a font in the crate
+        // let mut fonts = app.world.get_resource_mut::<Assets<Font>>().unwrap();
+    }
+}
+
 impl Material2d for CanvasMaterial {
-    fn fragment_shader(asset_server: &AssetServer) -> Option<Handle<Shader>> {
-        asset_server.watch_for_changes().unwrap();
-        Some(asset_server.load("../assets/shaders/plot_canvas.wgsl"))
+    fn fragment_shader(_asset_server: &AssetServer) -> Option<Handle<Shader>> {
+        let handle_untyped = CANVAS_SHADER_HANDLE.clone();
+        let shader_handle: Handle<Shader> = handle_untyped.typed::<Shader>();
+        Some(shader_handle)
     }
 
     fn bind_group(render_asset: &<Self as RenderAsset>::PreparedAsset) -> &BindGroup {

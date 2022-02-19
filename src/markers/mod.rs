@@ -4,6 +4,7 @@ use bevy::{
     ecs::system::lifetimeless::{Read, SQuery, SRes},
     ecs::system::SystemParamItem,
     prelude::*,
+    reflect::TypeUuid,
     render::{
         mesh::GpuBufferInfo,
         render_asset::RenderAssets,
@@ -171,7 +172,7 @@ pub(crate) struct MarkerMesh2dPipeline {
     /// this pipeline wraps the standard [`Mesh2dPipeline`]
     mesh2d_pipeline: Mesh2dPipeline,
     pub custom_uniform_layout: BindGroupLayout,
-    pub shader: Handle<Shader>,
+    // pub shader: Handle<Shader>,
     // material_layout: BindGroupLayout,
 }
 
@@ -198,29 +199,34 @@ impl FromWorld for MarkerMesh2dPipeline {
                 label: Some("markers_uniform_layout"),
             });
 
-        let world = world.cell();
-        let asset_server = world.get_resource::<AssetServer>().unwrap();
+        // let world = world.cell();
+        // let asset_server = world.get_resource::<AssetServer>().unwrap();
 
-        let shader = asset_server.load("../assets/shaders/markers.wgsl");
+        // let shader = asset_server.load("../assets/shaders/markers.wgsl");
 
-        let _result = asset_server.watch_for_changes();
+        // let _result = asset_server.watch_for_changes();
 
         Self {
             mesh2d_pipeline,
             custom_uniform_layout,
-
-            shader,
+            // shader,
         }
     }
 }
 
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub(crate) struct MarkerPipelineKey {
+    mesh: Mesh2dPipelineKey,
+    shader_handle: Handle<Shader>,
+}
+
 impl SpecializedPipeline for MarkerMesh2dPipeline {
-    type Key = Mesh2dPipelineKey;
+    type Key = MarkerPipelineKey;
 
     fn specialize(&self, key: Self::Key) -> RenderPipelineDescriptor {
-        let mut descriptor = self.mesh2d_pipeline.specialize(key);
+        let mut descriptor = self.mesh2d_pipeline.specialize(key.mesh);
 
-        descriptor.vertex.shader = self.shader.clone();
+        descriptor.vertex.shader = key.shader_handle.clone();
         descriptor.vertex.buffers.push(VertexBufferLayout {
             array_stride: std::mem::size_of::<MarkerInstanceData>() as u64,
             step_mode: VertexStepMode::Instance,
@@ -242,7 +248,7 @@ impl SpecializedPipeline for MarkerMesh2dPipeline {
                 // },
             ],
         });
-        descriptor.fragment.as_mut().unwrap().shader = self.shader.clone();
+        descriptor.fragment.as_mut().unwrap().shader = key.shader_handle.clone();
         descriptor.layout = Some(vec![
             self.mesh2d_pipeline.view_layout.clone(),
             self.mesh2d_pipeline.mesh_layout.clone(),
@@ -269,8 +275,24 @@ type DrawMarkerMesh2d = (
 
 pub(crate) struct MarkerMesh2dPlugin;
 
+pub(crate) struct MarkerShaderHandle(pub Handle<Shader>);
+
+pub const MARKER_SHADER_HANDLE: HandleUntyped =
+    HandleUntyped::weak_from_u64(Shader::TYPE_UUID, 9826352034109932589);
+
 impl Plugin for MarkerMesh2dPlugin {
     fn build(&self, app: &mut App) {
+        let mut shaders = app.world.get_resource_mut::<Assets<Shader>>().unwrap();
+
+        let handle_untyped = MARKER_SHADER_HANDLE.clone();
+
+        shaders.set_untracked(
+            handle_untyped.clone(),
+            Shader::from_wgsl(include_str!("markers.wgsl")),
+        );
+
+        let shader_typed_handle = shaders.get_handle(handle_untyped);
+
         app.add_plugin(UniformComponentPlugin::<MarkerUniform>::default());
         app.add_plugin(ExtractComponentPlugin::<MarkerInstanceMatData>::default());
 
@@ -280,6 +302,7 @@ impl Plugin for MarkerMesh2dPlugin {
             .add_render_command::<Transparent2d, DrawMarkerMesh2d>()
             .init_resource::<MarkerMesh2dPipeline>()
             .init_resource::<SpecializedPipelines<MarkerMesh2dPipeline>>()
+            .insert_resource(MarkerShaderHandle(shader_typed_handle))
             .add_system_to_stage(RenderStage::Prepare, prepare_instance_buffers)
             .add_system_to_stage(RenderStage::Extract, extract_colored_mesh2d)
             .add_system_to_stage(RenderStage::Queue, queue_marker_uniform_bind_group)
@@ -354,6 +377,7 @@ fn queue_colored_mesh2d(
     mut pipeline_cache: ResMut<RenderPipelineCache>,
     msaa: Res<Msaa>,
     render_meshes: Res<RenderAssets<Mesh>>,
+    shader_handle: Res<MarkerShaderHandle>,
     colored_mesh2d: Query<(&Mesh2dHandle, &Mesh2dUniform), With<MarkerInstanceMatData>>,
     mut views: Query<(&VisibleEntities, &mut RenderPhase<Transparent2d>)>,
 ) {
@@ -368,14 +392,19 @@ fn queue_colored_mesh2d(
             .get_id::<DrawMarkerMesh2d>()
             .unwrap();
 
-        let mesh_key = Mesh2dPipelineKey::from_msaa_samples(msaa.samples);
+        // let mesh_key = Mesh2dPipelineKey::from_msaa_samples(msaa.samples);
+
+        let mesh_key = MarkerPipelineKey {
+            mesh: Mesh2dPipelineKey::from_msaa_samples(msaa.samples),
+            shader_handle: shader_handle.0.clone(),
+        };
 
         // Queue all entities visible to that view
         for visible_entity in &visible_entities.entities {
             if let Ok((mesh2d_handle, mesh2d_uniform)) = colored_mesh2d.get(*visible_entity) {
-                let mut mesh2d_key = mesh_key;
+                let mut mesh2d_key = mesh_key.clone();
                 if let Some(mesh) = render_meshes.get(&mesh2d_handle.0) {
-                    mesh2d_key |=
+                    mesh2d_key.mesh |=
                         Mesh2dPipelineKey::from_primitive_topology(mesh.primitive_topology);
                 }
 

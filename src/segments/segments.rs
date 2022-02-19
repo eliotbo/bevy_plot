@@ -4,6 +4,7 @@ use bevy::{
     ecs::system::lifetimeless::{Read, SQuery, SRes},
     ecs::system::SystemParamItem,
     prelude::*,
+    reflect::TypeUuid,
     render::{
         mesh::Indices,
         render_asset::RenderAssets,
@@ -236,7 +237,7 @@ struct SegmentMesh2dPipeline {
     // This dummy white texture is to be used in place of optional textures
     #[allow(dead_code)]
     pub dummy_white_gpu_image: GpuImage,
-    pub shader_handle: Handle<Shader>,
+    // pub shader_handle: Handle<Shader>,
 }
 
 impl FromWorld for SegmentMesh2dPipeline {
@@ -262,24 +263,30 @@ impl FromWorld for SegmentMesh2dPipeline {
                 label: Some("custom_uniform_layout"),
             });
 
-        let world = world.cell();
-        let asset_server = world.get_resource::<AssetServer>().unwrap();
+        // let world = world.cell();
+        // let asset_server = world.get_resource::<AssetServer>().unwrap();
 
-        let shader_handle = asset_server.load("../assets/shaders/segments.wgsl");
+        // let shader_handle = asset_server.load("../assets/shaders/segments.wgsl");
 
         Self {
             view_layout: mesh2d_pipeline.view_layout,
             mesh_layout: mesh2d_pipeline.mesh_layout,
             custom_uniform_layout,
             dummy_white_gpu_image: mesh2d_pipeline.dummy_white_gpu_image,
-            shader_handle,
+            // shader_handle,
         }
     }
 }
 
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+struct SegmentPipelineKey {
+    mesh: Mesh2dPipelineKey,
+    shader_handle: Handle<Shader>,
+}
+
 // We implement `SpecializedPipeline` to customize the default rendering from `Mesh2dPipeline`
 impl SpecializedPipeline for SegmentMesh2dPipeline {
-    type Key = Mesh2dPipelineKey;
+    type Key = SegmentPipelineKey;
 
     fn specialize(&self, key: Self::Key) -> RenderPipelineDescriptor {
         // Customize how to store the meshes' vertex attributes in the vertex buffer
@@ -318,7 +325,7 @@ impl SpecializedPipeline for SegmentMesh2dPipeline {
         RenderPipelineDescriptor {
             vertex: VertexState {
                 // Use our custom shader
-                shader: self.shader_handle.clone(),
+                shader: key.shader_handle.clone(),
                 entry_point: "vertex".into(),
                 shader_defs: Vec::new(),
                 // Use our custom vertex buffer
@@ -330,7 +337,7 @@ impl SpecializedPipeline for SegmentMesh2dPipeline {
             },
             fragment: Some(FragmentState {
                 // Use our custom shader
-                shader: self.shader_handle.clone(),
+                shader: key.shader_handle.clone(),
                 shader_defs: Vec::new(),
                 entry_point: "fragment".into(),
                 targets: vec![ColorTargetState {
@@ -355,12 +362,12 @@ impl SpecializedPipeline for SegmentMesh2dPipeline {
                 unclipped_depth: false,
                 polygon_mode: PolygonMode::Fill,
                 conservative: false,
-                topology: key.primitive_topology(),
+                topology: key.mesh.primitive_topology(),
                 strip_index_format: None,
             },
             depth_stencil: None,
             multisample: MultisampleState {
-                count: key.msaa_samples(),
+                count: key.mesh.msaa_samples(),
                 mask: !0,
                 alpha_to_coverage_enabled: false,
             },
@@ -385,8 +392,26 @@ type DrawSegmentMesh2d = (
 /// Plugin that renders [`SegmentMesh2d`]s
 pub(crate) struct SegmentMesh2dPlugin;
 
+pub(crate) struct SegmentShaderHandle(pub Handle<Shader>);
+
+pub const SEGMENT_SHADER_HANDLE: HandleUntyped = HandleUntyped::weak_from_u64(
+    bevy::render::render_resource::Shader::TYPE_UUID,
+    11390296551150436484,
+);
+
 impl Plugin for SegmentMesh2dPlugin {
     fn build(&self, app: &mut App) {
+        let mut shaders = app.world.get_resource_mut::<Assets<Shader>>().unwrap();
+
+        let handle_untyped = SEGMENT_SHADER_HANDLE.clone();
+
+        shaders.set_untracked(
+            handle_untyped.clone(),
+            Shader::from_wgsl(include_str!("segments.wgsl")),
+        );
+
+        let shader_typed_handle = shaders.get_handle(handle_untyped);
+
         app.add_plugin(UniformComponentPlugin::<SegmentUniform>::default());
 
         let render_app = app.get_sub_app_mut(RenderApp).unwrap();
@@ -394,6 +419,7 @@ impl Plugin for SegmentMesh2dPlugin {
             .add_render_command::<Transparent2d, DrawSegmentMesh2d>()
             .init_resource::<SegmentMesh2dPipeline>()
             .init_resource::<SpecializedPipelines<SegmentMesh2dPipeline>>()
+            .insert_resource(SegmentShaderHandle(shader_typed_handle))
             .add_system_to_stage(RenderStage::Extract, extract_colored_mesh2d)
             .add_system_to_stage(RenderStage::Queue, queue_customuniform_bind_group)
             .add_system_to_stage(RenderStage::Queue, queue_colored_mesh2d);
@@ -450,6 +476,7 @@ fn queue_colored_mesh2d(
     mut pipeline_cache: ResMut<RenderPipelineCache>,
     msaa: Res<Msaa>,
     render_meshes: Res<RenderAssets<Mesh>>,
+    shader_handle: Res<SegmentShaderHandle>,
     colored_mesh2d: Query<(&Mesh2dHandle, &Mesh2dUniform), With<SegmentMesh2d>>,
     mut views: Query<(&VisibleEntities, &mut RenderPhase<Transparent2d>)>,
 ) {
@@ -463,19 +490,27 @@ fn queue_colored_mesh2d(
             .get_id::<DrawSegmentMesh2d>()
             .unwrap();
 
-        let mesh_key = Mesh2dPipelineKey::from_msaa_samples(msaa.samples);
+        // let mesh_key = Mesh2dPipelineKey::from_msaa_samples(msaa.samples);
+
+        let mesh_key = SegmentPipelineKey {
+            mesh: Mesh2dPipelineKey::from_msaa_samples(msaa.samples),
+            shader_handle: shader_handle.0.clone(),
+        };
 
         // Queue all entities visible to that view
         for visible_entity in &visible_entities.entities {
             if let Ok((mesh2d_handle, mesh2d_uniform)) = colored_mesh2d.get(*visible_entity) {
-                let mut mesh2d_key = mesh_key;
+                let mut segment_key = mesh_key.clone();
                 if let Some(mesh) = render_meshes.get(&mesh2d_handle.0) {
-                    mesh2d_key |=
+                    segment_key.mesh |=
                         Mesh2dPipelineKey::from_primitive_topology(mesh.primitive_topology);
                 }
 
-                let pipeline_id =
-                    pipelines.specialize(&mut pipeline_cache, &colored_mesh2d_pipeline, mesh2d_key);
+                let pipeline_id = pipelines.specialize(
+                    &mut pipeline_cache,
+                    &colored_mesh2d_pipeline,
+                    segment_key,
+                );
 
                 let mesh_z = mesh2d_uniform.transform.w_axis.z;
                 transparent_phase.add(Transparent2d {

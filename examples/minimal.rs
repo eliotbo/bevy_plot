@@ -9,6 +9,9 @@ fn main() {
         .run();
 }
 
+// If no fonts are loaded and put into the TickLabelFont resource,
+// the canvas will not include the tick labels. See the "markers" example
+// for an instance of loading a font.
 fn setup(mut commands: Commands, mut plots: ResMut<Assets<Plot>>) {
     commands.spawn_bundle(OrthographicCameraBundle::new_2d());
 

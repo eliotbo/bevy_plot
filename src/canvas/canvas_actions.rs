@@ -15,7 +15,7 @@ use crate::plot::*;
 
 fn spawn_axis_tick_labels(
     commands: &mut Commands,
-    asset_server: &Res<AssetServer>,
+    // asset_server: &Res<AssetServer>,
     plot_entity: Entity,
     text: &str,
     font_size: f32,
@@ -23,10 +23,11 @@ fn spawn_axis_tick_labels(
     v_align: VerticalAlign,
     h_align: HorizontalAlign,
     font_color: Color,
+    font: &Handle<Font>,
 ) {
-    let font = asset_server.load("fonts/Roboto-Bold.ttf");
+    // let font = asset_server.load("fonts/Roboto-Bold.ttf");
     let text_style = TextStyle {
-        font,
+        font: font.clone(),
         font_size,
         color: font_color,
     };
@@ -49,7 +50,8 @@ fn spawn_axis_tick_labels(
 
 pub(crate) fn update_target(
     mut commands: Commands,
-    asset_server: Res<AssetServer>,
+    // asset_server: Res<AssetServer>,
+    maybe_font: Res<TickLabelFont>,
     // mut materials: ResMut<Assets<CanvasMaterial>>,
     mut plots: ResMut<Assets<Plot>>,
     mut update_target_labels_event: EventReader<UpdateTargetLabelEvent>,
@@ -95,12 +97,8 @@ pub(crate) fn update_target(
                     .extend(target_text_z_plane)
                     + Vec3::new(offset, offset, 0.0);
 
-                let font = asset_server.load("fonts/Roboto-Regular.ttf");
-                let text_style = TextStyle {
-                    font,
-                    font_size,
-                    color: plot.target_label_color,
-                };
+                // let font = asset_server.load("fonts/Roboto-Regular.ttf");
+
                 let mut text_alignment = TextAlignment {
                     vertical: VerticalAlign::Bottom,
                     horizontal: HorizontalAlign::Left,
@@ -114,23 +112,30 @@ pub(crate) fn update_target(
                     target_position.x -= font_size * 0.4;
                 }
 
-                if !(target_position.y > upper_limits.y - font_size * 1.2
-                    || target_position.y < lower_limits.y + font_size * 0.2)
-                {
-                    let label_entity = commands
-                        .spawn_bundle(Text2dBundle {
-                            text: Text::with_section(
-                                target_str,
-                                text_style.clone(),
-                                text_alignment,
-                            ),
-                            transform: Transform::from_translation(target_position),
-                            ..Default::default()
-                        })
-                        .insert(TargetLabel)
-                        .id();
+                if let Some(font_handle) = maybe_font.maybe_font.as_ref() {
+                    let text_style = TextStyle {
+                        font: font_handle.clone(),
+                        font_size,
+                        color: plot.target_label_color,
+                    };
+                    if !(target_position.y > upper_limits.y - font_size * 1.2
+                        || target_position.y < lower_limits.y + font_size * 0.2)
+                    {
+                        let label_entity = commands
+                            .spawn_bundle(Text2dBundle {
+                                text: Text::with_section(
+                                    target_str,
+                                    text_style.clone(),
+                                    text_alignment,
+                                ),
+                                transform: Transform::from_translation(target_position),
+                                ..Default::default()
+                            })
+                            .insert(TargetLabel)
+                            .id();
 
-                    commands.entity(plot_entity).push_children(&[label_entity]);
+                        commands.entity(plot_entity).push_children(&[label_entity]);
+                    }
                 }
             }
         }
@@ -139,7 +144,8 @@ pub(crate) fn update_target(
 
 pub(crate) fn update_plot_labels(
     mut commands: Commands,
-    asset_server: Res<AssetServer>,
+    // asset_server: Res<AssetServer>,
+    maybe_font: Res<TickLabelFont>,
     // mut materials: ResMut<Assets<CanvasMaterial>>,
     mut plots: ResMut<Assets<Plot>>,
     mut update_plot_labels_event: EventReader<UpdatePlotLabelsEvent>,
@@ -147,187 +153,192 @@ pub(crate) fn update_plot_labels(
     mut canvas_query: Query<&mut Canvas>,
 ) {
     // If there is a stack of UpdatePlotLabelsEvent, only read the first one.
-    if let Some(event) = update_plot_labels_event.iter().next() {
-        let plot_handle = event.plot_handle.clone();
+    if let Some(font_handle) = maybe_font.maybe_font.as_ref() {
+        if let Some(event) = update_plot_labels_event.iter().next() {
+            let plot_handle = event.plot_handle.clone();
 
-        // if let Some(plot) = materials.get_mut(plot_handle.clone()) {
+            // if let Some(plot) = materials.get_mut(plot_handle.clone()) {
 
-        if let Some(plot) = plots.get_mut(plot_handle.clone()) {
-            if !plot.hide_tick_labels {
-                for entity in plot_label_query.iter() {
-                    commands.entity(entity).despawn();
-                }
-                let plot_entity = event.canvas_entity;
+            if let Some(plot) = plots.get_mut(plot_handle.clone()) {
+                if !plot.hide_tick_labels {
+                    for entity in plot_label_query.iter() {
+                        commands.entity(entity).despawn();
+                    }
+                    let plot_entity = event.canvas_entity;
 
-                let graph_sprite = canvas_query.get_mut(event.canvas_entity).unwrap();
+                    let graph_sprite = canvas_query.get_mut(event.canvas_entity).unwrap();
 
-                let size = graph_sprite.original_size;
+                    let size = graph_sprite.original_size;
 
-                let font_size = 16.0;
+                    let font_size = 16.0;
 
-                // TODO: clean this up using to_local inside the Plot struct
-                let graph_y = size.y / (1. + plot.outer_border.y);
-                let graph_x = size.x / (1. + plot.outer_border.x);
+                    // TODO: clean this up using to_local inside the Plot struct
+                    let graph_y = size.y / (1. + plot.outer_border.y);
+                    let graph_x = size.x / (1. + plot.outer_border.x);
 
-                let x_edge = size.x / (1. + plot.outer_border.x) / 2.0;
-                let y_edge = size.y / (1. + plot.outer_border.y) / 2.0;
+                    let x_edge = size.x / (1. + plot.outer_border.x) / 2.0;
+                    let y_edge = size.y / (1. + plot.outer_border.y) / 2.0;
 
-                let x_range = plot.bounds.up.x - plot.bounds.lo.x;
-                let y_range = plot.bounds.up.y - plot.bounds.lo.y;
+                    let x_range = plot.bounds.up.x - plot.bounds.lo.x;
+                    let y_range = plot.bounds.up.y - plot.bounds.lo.y;
 
-                let text_z_plane = 1.0001;
+                    let text_z_plane = 1.0001;
 
-                ///////////////////////////// x_axis labels  /////////////////////////////
-                {
-                    // distance from center for
-                    let center_dist_y = -graph_y / 2.0 + font_size * 1.0;
+                    ///////////////////////////// x_axis labels  /////////////////////////////
+                    {
+                        // distance from center for
+                        let center_dist_y = -graph_y / 2.0 + font_size * 1.0;
 
-                    // iterate
-                    let iter_x = x_edge * 2.0 / x_range;
+                        // iterate
+                        let iter_x = x_edge * 2.0 / x_range;
 
-                    // integer corresponding to lowest x tick
-                    let bottom_x = (plot.bounds.lo.x / plot.tick_period.x).abs().floor() as i64
-                        * (plot.bounds.lo.x).signum() as i64;
+                        // integer corresponding to lowest x tick
+                        let bottom_x = (plot.bounds.lo.x / plot.tick_period.x).abs().floor() as i64
+                            * (plot.bounds.lo.x).signum() as i64;
 
-                    // integer corresponding to highest x tick
-                    let top_x = (plot.bounds.up.x / plot.tick_period.x).abs().floor() as i64
-                        * (plot.bounds.up.x).signum() as i64;
+                        // integer corresponding to highest x tick
+                        let top_x = (plot.bounds.up.x / plot.tick_period.x).abs().floor() as i64
+                            * (plot.bounds.up.x).signum() as i64;
 
-                    let max_abs_x = (plot.tick_period.x * bottom_x as f32)
-                        .abs()
-                        .max(plot.tick_period.x * top_x as f32);
+                        let max_abs_x = (plot.tick_period.x * bottom_x as f32)
+                            .abs()
+                            .max(plot.tick_period.x * top_x as f32);
 
-                    for i in bottom_x..(top_x + 1) {
-                        if plot.hide_half_ticks && (i % 2).abs() == 1 {
-                            continue;
-                        }
-                        // // let j = i;
+                        for i in bottom_x..(top_x + 1) {
+                            if plot.hide_half_ticks && (i % 2).abs() == 1 {
+                                continue;
+                            }
+                            // // let j = i;
 
-                        // let mut x_str = format!(
-                        //     "{:.1$}",
-                        //     i as f32 * plot.tick_period.x,
-                        //     plot.significant_digits
-                        // );
+                            // let mut x_str = format!(
+                            //     "{:.1$}",
+                            //     i as f32 * plot.tick_period.x,
+                            //     plot.significant_digits
+                            // );
 
-                        // // scientific notation if the numbers are larger than 1000
-                        // if max_abs_x >= 1000.0 || max_abs_x < 0.01 {
-                        //     // x_str = format!("{:+e}", i as f32 * plot.tick_period.x);
-                        //     x_str = format!(
-                        //         "{:+.1$e}",
-                        //         i as f32 * plot.tick_period.x,
-                        //         plot.significant_digits
-                        //     );
-                        //     if let Some(rest) = x_str.strip_prefix("+") {
-                        //         x_str = rest.to_string();
-                        //     }
-                        // }
+                            // // scientific notation if the numbers are larger than 1000
+                            // if max_abs_x >= 1000.0 || max_abs_x < 0.01 {
+                            //     // x_str = format!("{:+e}", i as f32 * plot.tick_period.x);
+                            //     x_str = format!(
+                            //         "{:+.1$e}",
+                            //         i as f32 * plot.tick_period.x,
+                            //         plot.significant_digits
+                            //     );
+                            //     if let Some(rest) = x_str.strip_prefix("+") {
+                            //         x_str = rest.to_string();
+                            //     }
+                            // }
 
-                        let x_str = format_numeric_label(
-                            &plot,
-                            i as f32 * plot.tick_period.x,
-                            max_abs_x >= 1000.0 || max_abs_x < 0.01,
-                        );
+                            let x_str = format_numeric_label(
+                                &plot,
+                                i as f32 * plot.tick_period.x,
+                                max_abs_x >= 1000.0 || max_abs_x < 0.01,
+                            );
 
-                        // leftmost position on the x axis
-                        let x0 = x_edge * (-1.0 - plot.bounds.lo.x * 2.0 / x_range);
+                            // leftmost position on the x axis
+                            let x0 = x_edge * (-1.0 - plot.bounds.lo.x * 2.0 / x_range);
 
-                        // iterator for each label
-                        let x_pos = iter_x * i as f32 * plot.tick_period.x;
+                            // iterator for each label
+                            let x_pos = iter_x * i as f32 * plot.tick_period.x;
 
-                        let font_offset_x = -font_size * 0.2;
-                        // if the tick label is too far to the left, do not spawn it
-                        if (x0 + x_pos + font_offset_x + graph_x / 2.0) > font_size * 3.0
+                            let font_offset_x = -font_size * 0.2;
+                            // if the tick label is too far to the left, do not spawn it
+                            if (x0 + x_pos + font_offset_x + graph_x / 2.0) > font_size * 3.0
                         // if the tick label is too right to the left, do not spawn it
                         && (x0 + x_pos + font_offset_x - graph_x / 2.0) < -font_size * 0.0
-                        {
-                            spawn_axis_tick_labels(
-                                &mut commands,
-                                &asset_server,
-                                plot_entity,
-                                &x_str,
-                                font_size,
-                                Vec2::new(x0 + x_pos + font_offset_x, center_dist_y)
-                                    .extend(text_z_plane),
-                                VerticalAlign::Top,
-                                HorizontalAlign::Right,
-                                plot.tick_label_color,
-                            );
+                            {
+                                spawn_axis_tick_labels(
+                                    &mut commands,
+                                    // &asset_server,
+                                    plot_entity,
+                                    &x_str,
+                                    font_size,
+                                    Vec2::new(x0 + x_pos + font_offset_x, center_dist_y)
+                                        .extend(text_z_plane),
+                                    VerticalAlign::Top,
+                                    HorizontalAlign::Right,
+                                    plot.tick_label_color,
+                                    &font_handle,
+                                );
+                            }
                         }
                     }
-                }
 
-                ////////////////////////////////// y_axis labels //////////////////////////////////
-                {
-                    // distance from center for
-                    let center_dist_x = -graph_x / 2.0 + font_size * 0.2;
+                    ////////////////////////////////// y_axis labels //////////////////////////////////
+                    {
+                        // distance from center for
+                        let center_dist_x = -graph_x / 2.0 + font_size * 0.2;
 
-                    // iterate
-                    let iter_y = y_edge * 2.0 / y_range;
+                        // iterate
+                        let iter_y = y_edge * 2.0 / y_range;
 
-                    // integer corresponding to lowest y tick
-                    let bottom_y = (plot.bounds.lo.y / plot.tick_period.y).abs().floor() as i64
-                        * (plot.bounds.lo.y).signum() as i64;
+                        // integer corresponding to lowest y tick
+                        let bottom_y = (plot.bounds.lo.y / plot.tick_period.y).abs().floor() as i64
+                            * (plot.bounds.lo.y).signum() as i64;
 
-                    // integer corresponding to highest y tick
-                    let top_y = (plot.bounds.up.y / plot.tick_period.y).abs().floor() as i64
-                        * (plot.bounds.up.y).signum() as i64;
+                        // integer corresponding to highest y tick
+                        let top_y = (plot.bounds.up.y / plot.tick_period.y).abs().floor() as i64
+                            * (plot.bounds.up.y).signum() as i64;
 
-                    let max_abs_y = (plot.tick_period.y * bottom_y as f32)
-                        .abs()
-                        .max(plot.tick_period.y * top_y as f32);
+                        let max_abs_y = (plot.tick_period.y * bottom_y as f32)
+                            .abs()
+                            .max(plot.tick_period.y * top_y as f32);
 
-                    for i in bottom_y..top_y + 1 {
-                        if plot.hide_half_ticks && (i % 2).abs() == 1 {
-                            continue;
-                        }
+                        for i in bottom_y..top_y + 1 {
+                            if plot.hide_half_ticks && (i % 2).abs() == 1 {
+                                continue;
+                            }
 
-                        // let mut y_str = format!(
-                        //     "{:.1$}",
-                        //     i as f32 * plot.tick_period.y,
-                        //     plot.significant_digits
-                        // );
+                            // let mut y_str = format!(
+                            //     "{:.1$}",
+                            //     i as f32 * plot.tick_period.y,
+                            //     plot.significant_digits
+                            // );
 
-                        // // scientific notation if the numbers are larger than 1000
-                        // if max_abs_y >= 1000.0 || max_abs_y < 0.01 {
-                        //     y_str = format!(
-                        //         "{:+.1$e}",
-                        //         i as f32 * plot.tick_period.y,
-                        //         plot.significant_digits
-                        //     );
-                        //     if let Some(rest) = y_str.strip_prefix("+") {
-                        //         y_str = rest.to_string();
-                        //     }
-                        // }
+                            // // scientific notation if the numbers are larger than 1000
+                            // if max_abs_y >= 1000.0 || max_abs_y < 0.01 {
+                            //     y_str = format!(
+                            //         "{:+.1$e}",
+                            //         i as f32 * plot.tick_period.y,
+                            //         plot.significant_digits
+                            //     );
+                            //     if let Some(rest) = y_str.strip_prefix("+") {
+                            //         y_str = rest.to_string();
+                            //     }
+                            // }
 
-                        let y_str = format_numeric_label(
-                            &plot,
-                            i as f32 * plot.tick_period.y,
-                            // scientific notation if the numbers are larger than 1000 or smaller than 0.01
-                            max_abs_y >= 1000.0 || max_abs_y < 0.01,
-                        );
-
-                        // leftmost position on the x axis
-                        let y0 = y_edge * (-1.0 - plot.bounds.lo.y * 2.0 / y_range);
-
-                        // iterator for each label
-                        let y_pos = iter_y * i as f32 * plot.tick_period.y;
-
-                        let font_offset_y = -font_size * 0.1;
-
-                        if (y0 + y_pos + font_offset_y + graph_y / 2.0) > font_size * 1.2
-                            && (y0 + y_pos + font_offset_y - graph_y / 2.0) < -font_size * 0.0
-                        {
-                            spawn_axis_tick_labels(
-                                &mut commands,
-                                &asset_server,
-                                plot_entity,
-                                &y_str,
-                                font_size,
-                                Vec2::new(center_dist_x, y0 + y_pos + font_offset_y).extend(0.0001),
-                                VerticalAlign::Top,
-                                HorizontalAlign::Left,
-                                plot.tick_label_color,
+                            let y_str = format_numeric_label(
+                                &plot,
+                                i as f32 * plot.tick_period.y,
+                                // scientific notation if the numbers are larger than 1000 or smaller than 0.01
+                                max_abs_y >= 1000.0 || max_abs_y < 0.01,
                             );
+
+                            // leftmost position on the x axis
+                            let y0 = y_edge * (-1.0 - plot.bounds.lo.y * 2.0 / y_range);
+
+                            // iterator for each label
+                            let y_pos = iter_y * i as f32 * plot.tick_period.y;
+
+                            let font_offset_y = -font_size * 0.1;
+
+                            if (y0 + y_pos + font_offset_y + graph_y / 2.0) > font_size * 1.2
+                                && (y0 + y_pos + font_offset_y - graph_y / 2.0) < -font_size * 0.0
+                            {
+                                spawn_axis_tick_labels(
+                                    &mut commands,
+                                    // &asset_server,
+                                    plot_entity,
+                                    &y_str,
+                                    font_size,
+                                    Vec2::new(center_dist_x, y0 + y_pos + font_offset_y)
+                                        .extend(0.0001),
+                                    VerticalAlign::Top,
+                                    HorizontalAlign::Left,
+                                    plot.tick_label_color,
+                                    font_handle,
+                                );
+                            }
                         }
                     }
                 }

@@ -41,6 +41,7 @@ impl Plugin for PlotPlugin {
             .add_plugin(MarkerMesh2dPlugin)
             .add_plugin(BezierMesh2dPlugin)
             .add_plugin(SegmentMesh2dPlugin)
+            .add_plugin(CanvasMesh2dPlugin)
             .add_event::<SpawnGraphEvent>()
             .add_event::<ReleaseAllEvent>()
             .add_event::<UpdatePlotLabelsEvent>()
@@ -52,6 +53,7 @@ impl Plugin for PlotPlugin {
             .add_asset::<Plot>()
             .insert_resource(make_color_palette())
             .insert_resource(Cursor::default())
+            .insert_resource(TickLabelFont {maybe_font: None})
 
             .add_system_set(
                 SystemSet::new().label("model").before("shader_updates")             
@@ -118,6 +120,11 @@ fn do_spawn_plot(
             commands.entity(entity).despawn();
         }
     }
+}
+
+/// Handle to the type of font to use for tick labels (optional)
+pub struct TickLabelFont {
+    pub maybe_font: Option<Handle<Font>>,
 }
 
 /// Upon modifying any of the plot fields, use this event to update the the view (shaders).

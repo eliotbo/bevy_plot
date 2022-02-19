@@ -14,8 +14,15 @@ fn main() {
         .run();
 }
 
-fn setup(mut commands: Commands, mut plots: ResMut<Assets<Plot>>) {
+fn setup(
+    mut commands: Commands,
+    mut plots: ResMut<Assets<Plot>>,
+    asset_server: Res<AssetServer>,
+    mut maybe_font: ResMut<TickLabelFont>,
+) {
     commands.spawn_bundle(OrthographicCameraBundle::new_2d());
+    let font: Handle<Font> = asset_server.load("fonts/Roboto-Bold.ttf");
+    maybe_font.maybe_font = Some(font);
 
     let mut plot = Plot::default();
     plot.canvas_size = Vec2::new(790.0, 590.0);
