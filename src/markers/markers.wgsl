@@ -235,8 +235,11 @@ fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
     // circle -> 8
 
     let black = float4(0.0, 0.0, 0.0, 1.0);
+    if (point_type == -1) {
+      return vec4<f32>(0.0);
+    }
     // square -> 0
-    if (point_type == 0) {
+    else if (point_type == 0) {
 
       let r = cla(0.01, 0.3, 0.2 * uni.marker_size);
       let side_size = cla(0.1, 0.45, 0.4 * uni.marker_size);

@@ -6,7 +6,7 @@ use bevy::{
     prelude::*,
     reflect::TypeUuid,
     render::{
-        mesh::GpuBufferInfo,
+        mesh::{GpuBufferInfo, MeshVertexBufferLayout},
         render_asset::RenderAssets,
         render_component::{ComponentUniforms, DynamicUniformIndex, UniformComponentPlugin},
         render_component::{ExtractComponent, ExtractComponentPlugin},
@@ -220,11 +220,15 @@ pub(crate) struct MarkerPipelineKey {
     shader_handle: Handle<Shader>,
 }
 
-impl SpecializedPipeline for MarkerMesh2dPipeline {
+impl SpecializedMeshPipeline for MarkerMesh2dPipeline {
     type Key = MarkerPipelineKey;
 
-    fn specialize(&self, key: Self::Key) -> RenderPipelineDescriptor {
-        let mut descriptor = self.mesh2d_pipeline.specialize(key.mesh);
+    fn specialize(
+        &self,
+        key: Self::Key,
+        layout: &MeshVertexBufferLayout,
+    ) -> Result<RenderPipelineDescriptor, SpecializedMeshPipelineError> {
+        let mut descriptor = self.mesh2d_pipeline.specialize(key.mesh, layout)?;
 
         descriptor.vertex.shader = key.shader_handle.clone();
         descriptor.vertex.buffers.push(VertexBufferLayout {
@@ -255,7 +259,7 @@ impl SpecializedPipeline for MarkerMesh2dPipeline {
             self.custom_uniform_layout.clone(),
         ]);
 
-        descriptor
+        Ok(descriptor)
     }
 }
 
@@ -301,7 +305,7 @@ impl Plugin for MarkerMesh2dPlugin {
         render_app
             .add_render_command::<Transparent2d, DrawMarkerMesh2d>()
             .init_resource::<MarkerMesh2dPipeline>()
-            .init_resource::<SpecializedPipelines<MarkerMesh2dPipeline>>()
+            .init_resource::<SpecializedMeshPipelines<MarkerMesh2dPipeline>>()
             .insert_resource(MarkerShaderHandle(shader_typed_handle))
             .add_system_to_stage(RenderStage::Prepare, prepare_instance_buffers)
             .add_system_to_stage(RenderStage::Extract, extract_colored_mesh2d)
@@ -373,8 +377,8 @@ fn queue_marker_uniform_bind_group(
 fn queue_colored_mesh2d(
     transparent_draw_functions: Res<DrawFunctions<Transparent2d>>,
     colored_mesh2d_pipeline: Res<MarkerMesh2dPipeline>,
-    mut pipelines: ResMut<SpecializedPipelines<MarkerMesh2dPipeline>>,
-    mut pipeline_cache: ResMut<RenderPipelineCache>,
+    mut pipelines: ResMut<SpecializedMeshPipelines<MarkerMesh2dPipeline>>,
+    mut pipeline_cache: ResMut<PipelineCache>,
     msaa: Res<Msaa>,
     render_meshes: Res<RenderAssets<Mesh>>,
     shader_handle: Res<MarkerShaderHandle>,
@@ -406,19 +410,23 @@ fn queue_colored_mesh2d(
                 if let Some(mesh) = render_meshes.get(&mesh2d_handle.0) {
                     mesh2d_key.mesh |=
                         Mesh2dPipelineKey::from_primitive_topology(mesh.primitive_topology);
+
+                    if let Ok(pipeline_id) = pipelines.specialize(
+                        &mut pipeline_cache,
+                        &colored_mesh2d_pipeline,
+                        mesh2d_key,
+                        &mesh.layout.clone(),
+                    ) {
+                        let mesh_z = mesh2d_uniform.transform.w_axis.z;
+                        transparent_phase.add(Transparent2d {
+                            entity: *visible_entity,
+                            draw_function: draw_colored_mesh2d,
+                            pipeline: pipeline_id,
+                            sort_key: FloatOrd(mesh_z),
+                            batch_range: None,
+                        });
+                    }
                 }
-
-                let pipeline_id =
-                    pipelines.specialize(&mut pipeline_cache, &colored_mesh2d_pipeline, mesh2d_key);
-
-                let mesh_z = mesh2d_uniform.transform.w_axis.z;
-                transparent_phase.add(Transparent2d {
-                    entity: *visible_entity,
-                    draw_function: draw_colored_mesh2d,
-                    pipeline: pipeline_id,
-                    sort_key: FloatOrd(mesh_z),
-                    batch_range: None,
-                });
             }
         }
     }
@@ -465,11 +473,11 @@ impl EntityRenderCommand for DrawMarkerMeshInstanced {
     fn render<'w>(
         _view: Entity,
         item: Entity,
-        (meshes, mesh2d_query, instance_buffer_query): SystemParamItem<'w, '_, Self::Param>,
+        (meshes, mesh_query, instance_buffer_query): SystemParamItem<'w, '_, Self::Param>,
         pass: &mut TrackedRenderPass<'w>,
     ) -> RenderCommandResult {
-        let mesh_handle = &mesh2d_query.get(item).unwrap().0;
-        let instance_buffer = instance_buffer_query.get(item).unwrap();
+        let mesh_handle = &mesh_query.get(item).unwrap().0;
+        let instance_buffer = instance_buffer_query.get_inner(item).unwrap();
 
         let gpu_mesh = match meshes.into_inner().get(mesh_handle) {
             Some(gpu_mesh) => gpu_mesh,
@@ -479,7 +487,6 @@ impl EntityRenderCommand for DrawMarkerMeshInstanced {
         pass.set_vertex_buffer(0, gpu_mesh.vertex_buffer.slice(..));
         pass.set_vertex_buffer(1, instance_buffer.buffer.slice(..));
 
-        pass.set_vertex_buffer(0, gpu_mesh.vertex_buffer.slice(..));
         match &gpu_mesh.buffer_info {
             GpuBufferInfo::Indexed {
                 buffer,
@@ -490,7 +497,7 @@ impl EntityRenderCommand for DrawMarkerMeshInstanced {
                 pass.draw_indexed(0..*count, 0, 0..instance_buffer.length as u32);
             }
             GpuBufferInfo::NonIndexed { vertex_count } => {
-                pass.draw_indexed(0..*vertex_count, 0, 0..instance_buffer.length as u32);
+                pass.draw(0..*vertex_count, 0..instance_buffer.length as u32);
             }
         }
         RenderCommandResult::Success

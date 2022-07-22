@@ -13,7 +13,7 @@ categories = [
 ]
 
 [dependencies]
-bevy = { version = "0.6.0", default-features = false, features = [ "render", "x11",] }
+bevy = { version = "0.7.0", default-features = false, features = [ "render", "x11",] }
 itertools-num = "0.1"
 bytemuck = "1.7"
 rand = "0.8"
@@ -46,4 +46,6 @@ path = "examples/animate.rs"
 name = "runtime_setter"
 path = "examples/runtime_setter.rs"
 
-
+[[example]]
+name = "gege"
+path = "examples/gege.rs"

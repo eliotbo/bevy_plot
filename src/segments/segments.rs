@@ -6,7 +6,7 @@ use bevy::{
     prelude::*,
     reflect::TypeUuid,
     render::{
-        mesh::Indices,
+        mesh::{Indices, MeshVertexAttribute, MeshVertexBufferLayout},
         render_asset::RenderAssets,
         render_component::{ComponentUniforms, DynamicUniformIndex, UniformComponentPlugin},
         render_phase::{
@@ -182,12 +182,16 @@ fn plot_segments(
 
         let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
 
-        mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, mesh_pos_attributes.clone());
-        mesh.set_attribute("Ends", ends);
-        mesh.set_indices(Some(Indices::U32(inds)));
-        mesh.set_attribute(Mesh::ATTRIBUTE_UV_0, mesh_attr_uvs);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, mesh_pos_attributes.clone());
 
-        mesh.set_attribute("Vertext_Control", mesh_attr_controls);
+        let mva_ends = MeshVertexAttribute::new("Ends", 1, VertexFormat::Float32x4);
+        mesh.insert_attribute(mva_ends, ends);
+
+        mesh.set_indices(Some(Indices::U32(inds)));
+        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, mesh_attr_uvs);
+
+        let mva_controls = MeshVertexAttribute::new("Vertext_Control", 3, VertexFormat::Float32x4);
+        mesh.insert_attribute(mva_controls, mesh_attr_controls);
 
         commands
             .spawn_bundle((
@@ -285,10 +289,14 @@ struct SegmentPipelineKey {
 }
 
 // We implement `SpecializedPipeline` to customize the default rendering from `Mesh2dPipeline`
-impl SpecializedPipeline for SegmentMesh2dPipeline {
+impl SpecializedMeshPipeline for SegmentMesh2dPipeline {
     type Key = SegmentPipelineKey;
 
-    fn specialize(&self, key: Self::Key) -> RenderPipelineDescriptor {
+    fn specialize(
+        &self,
+        key: Self::Key,
+        layout: &MeshVertexBufferLayout,
+    ) -> Result<RenderPipelineDescriptor, SpecializedMeshPipelineError> {
         // Customize how to store the meshes' vertex attributes in the vertex buffer
         // Our meshes only have position and color
         let vertex_attributes = vec![
@@ -322,7 +330,7 @@ impl SpecializedPipeline for SegmentMesh2dPipeline {
         // This is the sum of the size of position, color uv attributes (12 + 16 + 8 + 8 = 44)
         let vertex_array_stride = 52;
 
-        RenderPipelineDescriptor {
+        Ok(RenderPipelineDescriptor {
             vertex: VertexState {
                 // Use our custom shader
                 shader: key.shader_handle.clone(),
@@ -372,7 +380,7 @@ impl SpecializedPipeline for SegmentMesh2dPipeline {
                 alpha_to_coverage_enabled: false,
             },
             label: Some("colored_mesh2d_pipeline".into()),
-        }
+        })
     }
 }
 
@@ -418,7 +426,7 @@ impl Plugin for SegmentMesh2dPlugin {
         render_app
             .add_render_command::<Transparent2d, DrawSegmentMesh2d>()
             .init_resource::<SegmentMesh2dPipeline>()
-            .init_resource::<SpecializedPipelines<SegmentMesh2dPipeline>>()
+            .init_resource::<SpecializedMeshPipelines<SegmentMesh2dPipeline>>()
             .insert_resource(SegmentShaderHandle(shader_typed_handle))
             .add_system_to_stage(RenderStage::Extract, extract_colored_mesh2d)
             .add_system_to_stage(RenderStage::Queue, queue_customuniform_bind_group)
@@ -472,8 +480,8 @@ fn queue_customuniform_bind_group(
 fn queue_colored_mesh2d(
     transparent_draw_functions: Res<DrawFunctions<Transparent2d>>,
     colored_mesh2d_pipeline: Res<SegmentMesh2dPipeline>,
-    mut pipelines: ResMut<SpecializedPipelines<SegmentMesh2dPipeline>>,
-    mut pipeline_cache: ResMut<RenderPipelineCache>,
+    mut pipelines: ResMut<SpecializedMeshPipelines<SegmentMesh2dPipeline>>,
+    mut pipeline_cache: ResMut<PipelineCache>,
     msaa: Res<Msaa>,
     render_meshes: Res<RenderAssets<Mesh>>,
     shader_handle: Res<SegmentShaderHandle>,
@@ -504,22 +512,23 @@ fn queue_colored_mesh2d(
                 if let Some(mesh) = render_meshes.get(&mesh2d_handle.0) {
                     segment_key.mesh |=
                         Mesh2dPipelineKey::from_primitive_topology(mesh.primitive_topology);
+
+                    if let Ok(pipeline_id) = pipelines.specialize(
+                        &mut pipeline_cache,
+                        &colored_mesh2d_pipeline,
+                        segment_key,
+                        &mesh.layout,
+                    ) {
+                        let mesh_z = mesh2d_uniform.transform.w_axis.z;
+                        transparent_phase.add(Transparent2d {
+                            entity: *visible_entity,
+                            draw_function: draw_colored_mesh2d,
+                            pipeline: pipeline_id,
+                            sort_key: FloatOrd(mesh_z),
+                            batch_range: None,
+                        });
+                    }
                 }
-
-                let pipeline_id = pipelines.specialize(
-                    &mut pipeline_cache,
-                    &colored_mesh2d_pipeline,
-                    segment_key,
-                );
-
-                let mesh_z = mesh2d_uniform.transform.w_axis.z;
-                transparent_phase.add(Transparent2d {
-                    entity: *visible_entity,
-                    draw_function: draw_colored_mesh2d,
-                    pipeline: pipeline_id,
-                    sort_key: FloatOrd(mesh_z),
-                    batch_range: None,
-                });
             }
         }
     }

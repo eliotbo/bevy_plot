@@ -655,12 +655,12 @@ pub(crate) fn adjust_graph_size(
 
 pub(crate) fn adjust_graph_axes(
     mut commands: Commands,
-    mut query: QuerySet<(
-        QueryState<
+    mut query: ParamSet<(
+        Query<
             (Entity, &Canvas, &Handle<Plot>, &Handle<CanvasMaterial>),
             (With<MoveAxes>, Without<Locked>),
         >,
-        QueryState<
+        Query<
             (
                 Entity,
                 &Canvas,
@@ -671,7 +671,20 @@ pub(crate) fn adjust_graph_axes(
             Without<Locked>,
         >,
     )>,
-
+    // mut query0: Query<
+    //     (Entity, &Canvas, &Handle<Plot>, &Handle<CanvasMaterial>),
+    //     (With<MoveAxes>, Without<Locked>),
+    // >,
+    // mut query1: Query<
+    //     (
+    //         Entity,
+    //         &Canvas,
+    //         &Handle<Plot>,
+    //         &Handle<CanvasMaterial>,
+    //         &ZoomAxes,
+    //     ),
+    //     Without<Locked>,
+    // >,
     mut plots: ResMut<Assets<Plot>>,
 
     mut mouse_motion_events: EventReader<MouseMotion>,
@@ -688,7 +701,7 @@ pub(crate) fn adjust_graph_axes(
 
     // when axes have been moved, respawn the data
     if delta_pixels != Vec2::ZERO {
-        for (canvas_entity, _graph_sprite, plot_handle, material_handle) in query.q0().iter_mut() {
+        for (canvas_entity, _graph_sprite, plot_handle, material_handle) in query.p0().iter_mut() {
             if let Some(plot) = plots.get_mut(plot_handle) {
                 plot.move_axes(delta_pixels);
 
@@ -730,7 +743,7 @@ pub(crate) fn adjust_graph_axes(
 
     // zoom axes using mouse scroll
     for (canvas_entity, _graph_sprite, plot_handle, material_handle, zoom_info) in
-        query.q1().iter_mut()
+        query.p1().iter_mut()
     {
         //
         if let Some(plot) = plots.get_mut(plot_handle) {

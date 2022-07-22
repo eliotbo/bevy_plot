@@ -417,8 +417,6 @@ fn plot_fn(
 
         mesh.insert_attribute(mva_controls, mesh_attr_controls);
 
-        // println!("mesh: {:?}", mesh.iter().map(|x| ));
-
         commands
             .spawn_bundle((
                 BezierMesh2d::default(),
@@ -506,122 +504,139 @@ pub(crate) struct BezierPipelineKey {
 }
 
 // We implement `SpecializedPipeline` to customize the default rendering from `Mesh2dPipeline`
-impl SpecializedRenderPipeline for BezierMesh2dPipeline {
+impl SpecializedMeshPipeline for BezierMesh2dPipeline {
     type Key = BezierPipelineKey;
 
     fn specialize(
         &self,
         key: Self::Key,
-        // layout: &MeshVertexBufferLayout,
-    ) -> RenderPipelineDescriptor {
-        // let mut descriptor = self.mesh2d_pipeline.specialize(key.mesh);
+        layout: &MeshVertexBufferLayout,
+    ) -> Result<RenderPipelineDescriptor, SpecializedMeshPipelineError> {
+        let mut descriptor = self.mesh2d_pipeline.specialize(key.mesh, layout)?;
 
-        let formats = vec![
-            // Position
-            VertexFormat::Float32x3,
-            // Color
-            VertexFormat::Float32x4,
-            // UV
-            VertexFormat::Float32x2,
-            // Controls
-            VertexFormat::Float32x4,
+        // Customize how to store the meshes' vertex attributes in the vertex buffer
+        // Our meshes only have position and color
+        let vertex_attributes = vec![
+            // Position (GOTCHA! Vertex_Position isn't first in the buffer due to how Mesh sorts attributes (alphabetically))
+            VertexAttribute {
+                format: VertexFormat::Float32x3,
+                // this offset is the size of the color attribute, which is stored first
+                offset: 16,
+                // position is available at location 0 in the shader
+                shader_location: 0,
+            },
+            // Color ----> not truly color. It's actually Ends in the shader, but I am too tired to change it right now.
+            VertexAttribute {
+                format: VertexFormat::Float32x4,
+                offset: 0,
+                shader_location: 1,
+            },
+            // uv
+            VertexAttribute {
+                format: VertexFormat::Float32x2,
+                offset: 28,
+                shader_location: 2,
+            },
+            // Control Point
+            VertexAttribute {
+                format: VertexFormat::Float32x4,
+                offset: 36,
+                shader_location: 3,
+            },
         ];
+        // This is the sum of the size of position, color uv attributes (12 + 16 + 8 + 8 = 44)
+        let vertex_array_stride = 52;
 
-        let vertex_layout =
-            VertexBufferLayout::from_vertex_formats(VertexStepMode::Vertex, formats);
-
-        RenderPipelineDescriptor {
-            vertex: VertexState {
-                // Use our custom shader
-                shader: key.shader_handle.clone(),
-                entry_point: "vertex".into(),
-                shader_defs: Vec::new(),
-                // Use our custom vertex buffer
-                // buffers: vec![VertexBufferLayout {
-                //     array_stride: vertex_array_stride,
-                //     step_mode: VertexStepMode::Vertex,
-                //     attributes: vertex_attributes,
-                // }],
-                buffers: vec![vertex_layout],
-            },
-            fragment: Some(FragmentState {
-                // Use our custom shader
-                shader: key.shader_handle.clone(),
-                shader_defs: Vec::new(),
-                entry_point: "fragment".into(),
-                targets: vec![ColorTargetState {
-                    format: TextureFormat::bevy_default(),
-                    blend: Some(BlendState::ALPHA_BLENDING),
-                    write_mask: ColorWrites::ALL,
-                }],
-            }),
-            // Use the two standard uniforms for 2d meshes
-            layout: Some(vec![
-                // Bind group 0 is the view uniform
-                self.mesh2d_pipeline.view_layout.clone(),
-                // Bind group 1 is the mesh uniform
-                self.mesh2d_pipeline.mesh_layout.clone(),
-                //
-                self.custom_uniform_layout.clone(),
-            ]),
-            primitive: PrimitiveState {
-                front_face: FrontFace::Ccw,
-                cull_mode: Some(Face::Back),
-                unclipped_depth: false,
-                polygon_mode: PolygonMode::Fill,
-                conservative: false,
-                topology: key.mesh.primitive_topology(),
-                strip_index_format: None,
-            },
-            depth_stencil: None,
-            multisample: MultisampleState {
-                count: key.mesh.msaa_samples(),
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            label: Some("colored_mesh2d_pipeline".into()),
-        }
-
+        descriptor.vertex.shader = key.shader_handle.clone();
         // descriptor.vertex.shader = key.shader_handle.clone();
-        // // descriptor.vertex.shader = key.shader_handle.clone();
 
-        // descriptor.vertex.buffers = vec![VertexBufferLayout {
-        //     array_stride: vertex_array_stride,
-        //     step_mode: VertexStepMode::Vertex,
-        //     attributes: vertex_attributes,
+        descriptor.vertex.buffers = vec![VertexBufferLayout {
+            array_stride: vertex_array_stride,
+            step_mode: VertexStepMode::Vertex,
+            attributes: vertex_attributes,
+        }];
+
+        descriptor.fragment.as_mut().unwrap().shader = key.shader_handle.clone();
+        descriptor.layout = Some(vec![
+            // Bind group 0 is the view uniform
+            self.mesh2d_pipeline.view_layout.clone(),
+            // Bind group 1 is the mesh uniform
+            self.mesh2d_pipeline.mesh_layout.clone(),
+            self.custom_uniform_layout.clone(),
+        ]);
+        descriptor.label = Some("bezier_mesh2d_pipeline".into());
+        // descriptor.fragment.as_mut().unwrap().targets = vec![ColorTargetState {
+        //     format: TextureFormat::bevy_default(),
+        //     blend: Some(BlendState::ALPHA_BLENDING),
+        //     write_mask: ColorWrites::ALL,
         // }];
+        // descriptor.primitive = PrimitiveState {
+        //     front_face: FrontFace::Ccw,
+        //     cull_mode: Some(Face::Back),
+        //     unclipped_depth: false,
+        //     polygon_mode: PolygonMode::Fill,
+        //     conservative: false,
+        //     topology: key.mesh.primitive_topology(),
+        //     strip_index_format: None,
+        // };
+        // descriptor.depth_stencil = None;
+        // descriptor.multisample = MultisampleState {
+        //     count: key.mesh.msaa_samples(),
+        //     mask: !0,
+        //     alpha_to_coverage_enabled: false,
+        // };
 
-        // descriptor.fragment.as_mut().unwrap().shader = key.shader_handle.clone();
-        // descriptor.layout = Some(vec![
-        //     // Bind group 0 is the view uniform
-        //     self.mesh2d_pipeline.view_layout.clone(),
-        //     // Bind group 1 is the mesh uniform
-        //     self.mesh2d_pipeline.mesh_layout.clone(),
-        //     self.custom_uniform_layout.clone(),
-        // ]);
-        // descriptor.label = Some("bezier_mesh2d_pipeline".into());
-        // // descriptor.fragment.as_mut().unwrap().targets = vec![ColorTargetState {
-        // //     format: TextureFormat::bevy_default(),
-        // //     blend: Some(BlendState::ALPHA_BLENDING),
-        // //     write_mask: ColorWrites::ALL,
-        // // }];
-        // // descriptor.primitive = PrimitiveState {
-        // //     front_face: FrontFace::Ccw,
-        // //     cull_mode: Some(Face::Back),
-        // //     unclipped_depth: false,
-        // //     polygon_mode: PolygonMode::Fill,
-        // //     conservative: false,
-        // //     topology: key.mesh.primitive_topology(),
-        // //     strip_index_format: None,
-        // // };
-        // // descriptor.depth_stencil = None;
-        // // descriptor.multisample = MultisampleState {
-        // //     count: key.mesh.msaa_samples(),
-        // //     mask: !0,
-        // //     alpha_to_coverage_enabled: false,
-        // // };
+        Ok(descriptor)
 
-        // Ok(descriptor)
+        // Ok(RenderPipelineDescriptor {
+        //     vertex: VertexState {
+        //         // Use our custom shader
+        //         shader: key.shader_handle.clone(),
+        //         entry_point: "vertex".into(),
+        //         shader_defs: Vec::new(),
+        //         // Use our custom vertex buffer
+        //         buffers: vec![VertexBufferLayout {
+        //             array_stride: vertex_array_stride,
+        //             step_mode: VertexStepMode::Vertex,
+        //             attributes: vertex_attributes,
+        //         }],
+        //     },
+        //     fragment: Some(FragmentState {
+        //         // Use our custom shader
+        //         shader: key.shader_handle.clone(),
+        //         shader_defs: Vec::new(),
+        //         entry_point: "fragment".into(),
+        //         targets: vec![ColorTargetState {
+        //             format: TextureFormat::bevy_default(),
+        //             blend: Some(BlendState::ALPHA_BLENDING),
+        //             write_mask: ColorWrites::ALL,
+        //         }],
+        //     }),
+        //     // Use the two standard uniforms for 2d meshes
+        //     layout: Some(vec![
+        //         // Bind group 0 is the view uniform
+        //         self.mesh2d_pipeline.view_layout.clone(),
+        //         // Bind group 1 is the mesh uniform
+        //         self.mesh2d_pipeline.mesh_layout.clone(),
+        //         self.custom_uniform_layout.clone(),
+        //     ]),
+        //     primitive: PrimitiveState {
+        //         front_face: FrontFace::Ccw,
+        //         cull_mode: Some(Face::Back),
+        //         unclipped_depth: false,
+        //         polygon_mode: PolygonMode::Fill,
+        //         conservative: false,
+        //         topology: key.mesh.primitive_topology(),
+        //         strip_index_format: None,
+        //     },
+        //     depth_stencil: None,
+        //     multisample: MultisampleState {
+        //         count: key.mesh.msaa_samples(),
+        //         mask: !0,
+        //         alpha_to_coverage_enabled: false,
+        //     },
+        //     label: Some("colored_mesh2d_pipeline".into()),
+        // })
     }
 }
 
@@ -666,7 +681,7 @@ impl Plugin for BezierMesh2dPlugin {
         render_app
             .add_render_command::<Transparent2d, DrawBezierMesh2d>()
             .init_resource::<BezierMesh2dPipeline>()
-            .init_resource::<SpecializedRenderPipelines<BezierMesh2dPipeline>>()
+            .init_resource::<SpecializedMeshPipelines<BezierMesh2dPipeline>>()
             .insert_resource(BezierShaderHandle(shader_typed_handle))
             .add_system_to_stage(RenderStage::Extract, extract_colored_mesh2d)
             .add_system_to_stage(RenderStage::Queue, queue_customuniform_bind_group)
@@ -721,7 +736,7 @@ fn queue_customuniform_bind_group(
 fn queue_colored_mesh2d(
     transparent_draw_functions: Res<DrawFunctions<Transparent2d>>,
     colored_mesh2d_pipeline: Res<BezierMesh2dPipeline>,
-    mut pipelines: ResMut<SpecializedRenderPipelines<BezierMesh2dPipeline>>,
+    mut pipelines: ResMut<SpecializedMeshPipelines<BezierMesh2dPipeline>>,
     mut pipeline_cache: ResMut<PipelineCache>,
     msaa: Res<Msaa>,
     render_meshes: Res<RenderAssets<Mesh>>,
@@ -752,21 +767,21 @@ fn queue_colored_mesh2d(
                     bezier_key.mesh |=
                         Mesh2dPipelineKey::from_primitive_topology(mesh.primitive_topology);
 
-                    let pipeline_id = pipelines.specialize(
+                    if let Ok(pipeline_id) = pipelines.specialize(
                         &mut pipeline_cache,
                         &colored_mesh2d_pipeline,
                         bezier_key,
-                        // &mesh.layout.clone(),
-                    );
-
-                    let mesh_z = mesh2d_uniform.transform.w_axis.z;
-                    transparent_phase.add(Transparent2d {
-                        entity: *visible_entity,
-                        draw_function: draw_colored_mesh2d,
-                        pipeline: pipeline_id,
-                        sort_key: FloatOrd(mesh_z),
-                        batch_range: None,
-                    });
+                        &mesh.layout.clone(),
+                    ) {
+                        let mesh_z = mesh2d_uniform.transform.w_axis.z;
+                        transparent_phase.add(Transparent2d {
+                            entity: *visible_entity,
+                            draw_function: draw_colored_mesh2d,
+                            pipeline: pipeline_id,
+                            sort_key: FloatOrd(mesh_z),
+                            batch_range: None,
+                        });
+                    }
                 }
             }
         }

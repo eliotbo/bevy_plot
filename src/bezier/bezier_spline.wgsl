@@ -298,7 +298,7 @@ fn fragment(in: FragmentInput) -> [[location(0)]] vec4<f32> {
     let s = smoothStep(-2.0, 0.0, d );
     out_col = mix(out_col, float4(0.0,0.3,0.3,0.0) ,  s) ;
 
-
+    // out_col =  float4(0.0,0.3,0.3,1.0);
 
 
     return out_col;
