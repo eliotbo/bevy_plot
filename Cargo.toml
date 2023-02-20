@@ -9,11 +9,19 @@ readme = "README.md"
 keywords = ["bevy", "plot", "curve", "graph", "gamedev"]
 repository = "https://github.com/eliotbo/bevy_plot"
 categories = [
-    "visualization", "game-engines", "game-development", "mathematics", "science"
+    "visualization",
+    "game-engines",
+    "game-development",
+    "mathematics",
+    "science",
 ]
 
+
 [dependencies]
-bevy = { version = "0.7.0", default-features = false, features = [ "render", "x11",] }
+bevy = { version = "0.7.0", default-features = false, features = [
+    "render",
+    "x11",
+] }
 itertools-num = "0.1"
 bytemuck = "1.7"
 rand = "0.8"
