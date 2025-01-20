@@ -1,7 +1,9 @@
+use bevy::text::{TextFont, TextLayout};
 use bevy::{
     input::mouse::{MouseMotion, MouseWheel},
     prelude::*,
-    sprite::{MaterialMesh2dBundle, Mesh2dHandle},
+    // // sprite::Mesh2dHandle,
+    // text::{FontSmoothing, LineBreak, TextBounds},
 };
 
 use crate::canvas::*;
@@ -10,7 +12,7 @@ use crate::inputs::*;
 use crate::canvas::RespawnAllEvent;
 use crate::util::*;
 
-use crate::bezier::*;
+// use crate::bezier::*;
 use crate::plot::*;
 
 fn spawn_axis_tick_labels(
@@ -20,32 +22,42 @@ fn spawn_axis_tick_labels(
     text: &str,
     font_size: f32,
     position: Vec3,
-    v_align: VerticalAlign,
-    h_align: HorizontalAlign,
+    // v_align: AlignItems,
+    // h_align: AlignItems,
     font_color: Color,
     font: &Handle<Font>,
 ) {
     // let font = asset_server.load("fonts/Roboto-Bold.ttf");
-    let text_style = TextStyle {
+    let text_font = TextFont {
         font: font.clone(),
         font_size,
-        color: font_color,
+        ..default() // color: font_color,
     };
-    let text_alignment = TextAlignment {
-        vertical: v_align,
-        horizontal: h_align,
-    };
+    // let text_alignment = TextAlignment {
+    //     vertical: v_align,
+    //     horizontal: h_align,
+    // };
 
-    let label_entity = commands
-        .spawn_bundle(Text2dBundle {
-            text: Text::from_section(text, text_style.clone()).with_alignment(text_alignment),
-            transform: Transform::from_translation(position),
-            ..Default::default()
-        })
-        .insert(PlotLabel)
-        .id();
+    // let text_font = TextFont {
+    //     font: font.clone(),
+    //     font_size,
+    //     ..default()
+    // };
 
-    commands.entity(plot_entity).push_children(&[label_entity]);
+    let text_justification = JustifyText::Center;
+
+    commands.entity(plot_entity).with_children(|parent| {
+        parent
+            .spawn((
+                Text2d::new(text),
+                text_font,
+                TextLayout::new_with_justify(text_justification),
+                // text: Text::from_section(, text_font.clone()).with_alignment(text_alignment),
+                Transform::from_translation(position),
+            ))
+            .insert(PlotLabel)
+            .id();
+    });
 }
 
 pub(crate) fn update_target(
@@ -53,14 +65,14 @@ pub(crate) fn update_target(
     // asset_server: Res<AssetServer>,
     maybe_font: Res<TickLabelFont>,
     // mut materials: ResMut<Assets<CanvasMaterial>>,
-    mut plots: ResMut<Assets<Plot>>,
+    mut plots: ResMut<PlotMap>,
     mut update_target_labels_event: EventReader<UpdateTargetLabelEvent>,
     taget_label_query: Query<Entity, With<TargetLabel>>,
     // canvas_query: Query<(Entity, &mut Handle<CanvasMaterial>, &Handle<Plot>)>,
     mut canvas_materials: ResMut<Assets<CanvasMaterial>>,
     // mut canvas_query: Query<&mut Canvas>,
 ) {
-    if let Some(event) = update_target_labels_event.iter().next() {
+    if let Some(event) = update_target_labels_event.read().next() {
         for entity in taget_label_query.iter() {
             commands.entity(entity).despawn();
         }
@@ -68,10 +80,10 @@ pub(crate) fn update_target(
 
         // let size = graph_sprite.original_size;
 
-        let plot_handle = event.plot_handle.clone();
+        let plot_id = event.plot_id.clone();
         let plot_entity = event.canvas_entity;
         // if let Some(plot) = materials.get_mut(plot_handle.clone()) {
-        if let Some(plot) = plots.get_mut(&plot_handle.clone()) {
+        if let Some(plot) = plots.get_mut(&plot_id) {
             //
             // update canvas shader
             if let Some(canvas_mat) = canvas_materials.get_mut(&event.canvas_material_handle) {
@@ -95,38 +107,42 @@ pub(crate) fn update_target(
 
                 // let font = asset_server.load("fonts/Roboto-Regular.ttf");
 
-                let mut text_alignment = TextAlignment {
-                    vertical: VerticalAlign::Bottom,
-                    horizontal: HorizontalAlign::Left,
-                };
+                // let mut text_alignment = TextAlignment {
+                //     vertical: VerticalAlign::Bottom,
+                //     horizontal: HorizontalAlign::Left,
+                // };
 
                 let upper_limits = plot.canvas_position + plot.canvas_size / 2.0;
                 let lower_limits = plot.canvas_position - plot.canvas_size / 2.0;
 
                 if target_position.x > upper_limits.x - font_size * 1.0 {
-                    text_alignment.horizontal = HorizontalAlign::Right;
+                    // text_alignment.horizontal = HorizontalAlign::Right;
                     target_position.x -= font_size * 0.4;
                 }
 
                 if let Some(font_handle) = maybe_font.maybe_font.as_ref() {
-                    let text_style = TextStyle {
+                    let text_font = TextFont {
                         font: font_handle.clone(),
                         font_size,
-                        color: plot.target_label_color,
+                        ..default() // color: plot.target_label_color,
                     };
+
                     if !(target_position.y > upper_limits.y - font_size * 1.2
                         || target_position.y < lower_limits.y + font_size * 0.2)
                     {
-                        let label_entity = commands
-                            .spawn_bundle(Text2dBundle {
-                                text: Text::from_section(target_str, text_style.clone()).with_alignment(text_alignment),
-                                transform: Transform::from_translation(target_position),
-                                ..Default::default()
-                            })
-                            .insert(TargetLabel)
-                            .id();
+                        commands.entity(plot_entity).with_children(|parent| {
+                            parent
+                                .spawn((
+                                    Text2d::new(target_str),
+                                    text_font,
+                                    TextColor(plot.target_label_color),
+                                    Transform::from_translation(target_position),
+                                ))
+                                .insert(TargetLabel)
+                                .id();
+                        });
 
-                        commands.entity(plot_entity).push_children(&[label_entity]);
+                        // commands.entity(plot_entity).push_children(&[label_entity]);
                     }
                 }
             }
@@ -139,19 +155,19 @@ pub(crate) fn update_plot_labels(
     // asset_server: Res<AssetServer>,
     maybe_font: Res<TickLabelFont>,
     // mut materials: ResMut<Assets<CanvasMaterial>>,
-    mut plots: ResMut<Assets<Plot>>,
+    mut plots: ResMut<PlotMap>,
     mut update_plot_labels_event: EventReader<UpdatePlotLabelsEvent>,
     plot_label_query: Query<Entity, With<PlotLabel>>,
     mut canvas_query: Query<&mut CanvasParams>,
 ) {
     // If there is a stack of UpdatePlotLabelsEvent, only read the first one.
     if let Some(font_handle) = maybe_font.maybe_font.as_ref() {
-        if let Some(event) = update_plot_labels_event.iter().next() {
-            let plot_handle = event.plot_handle.clone();
+        if let Some(event) = update_plot_labels_event.read().next() {
+            let plot_id = event.plot_id.clone();
 
             // if let Some(plot) = materials.get_mut(plot_handle.clone()) {
 
-            if let Some(plot) = plots.get_mut(&plot_handle.clone()) {
+            if let Some(plot) = plots.get_mut(&plot_id.clone()) {
                 if !plot.hide_tick_labels {
                     for entity in plot_label_query.iter() {
                         commands.entity(entity).despawn();
@@ -246,8 +262,8 @@ pub(crate) fn update_plot_labels(
                                     &x_str,
                                     font_size,
                                     Vec2::new(x0 + x_pos + font_offset_x, center_dist_y).extend(text_z_plane),
-                                    VerticalAlign::Top,
-                                    HorizontalAlign::Right,
+                                    // AlignItems::Start,
+                                    // AlignItems::End,
                                     plot.tick_label_color,
                                     &font_handle,
                                 );
@@ -323,8 +339,8 @@ pub(crate) fn update_plot_labels(
                                     &y_str,
                                     font_size,
                                     Vec2::new(center_dist_x, y0 + y_pos + font_offset_y).extend(0.0001),
-                                    VerticalAlign::Top,
-                                    HorizontalAlign::Left,
+                                    // VerticalAlign::Top,
+                                    // HorizontalAlign::Left,
                                     plot.tick_label_color,
                                     font_handle,
                                 );
@@ -343,9 +359,9 @@ pub(crate) fn wait_for_graph_spawn(
     mut wait_for_update_labels_event: EventReader<WaitForUpdatePlotLabelsEvent>,
     mut update_labels_event: EventWriter<UpdatePlotLabelsEvent>,
 ) {
-    for event in wait_for_update_labels_event.iter() {
+    for event in wait_for_update_labels_event.read() {
         update_labels_event.send(UpdatePlotLabelsEvent {
-            plot_handle: event.plot_handle.clone(),
+            plot_id: event.plot_id,
             canvas_entity: event.quad_entity,
         });
     }
@@ -356,41 +372,31 @@ pub(crate) fn spawn_graph(
     mut commands: Commands,
     mut spawn_graph_event: EventReader<SpawnGraphEvent>,
     mut materials: ResMut<Assets<CanvasMaterial>>,
-    plots: ResMut<Assets<Plot>>,
+    plots: ResMut<PlotMap>,
+
     mut meshes: ResMut<Assets<Mesh>>,
-    // asset_server: Res<AssetServer>,
+
     // mut update_labels_event: EventWriter<UpdatePlotLabelsEvent>,
     // mut spawn_markers_event: EventWriter<SpawnMarkersEvent>,
-    mut spawn_beziercurve_event: EventWriter<SpawnBezierCurveEvent>,
+    // mut spawn_beziercurve_event: EventWriter<SpawnBezierCurveEvent>,
     mut wait_for_update_labels_event: EventWriter<WaitForUpdatePlotLabelsEvent>,
     mut change_canvas_material_event: EventWriter<RespawnAllEvent>,
 ) {
-    for event in spawn_graph_event.iter() {
-        let plot_handle = event.plot_handle.clone();
-        let plot = plots.get(&plot_handle.clone()).unwrap();
+    for event in spawn_graph_event.read() {
+        let plot_id = event.plot_id;
+
+        let plot = plots.plots.get(&plot_id).unwrap();
 
         let material = CanvasMaterial::new(&plot);
 
         let canvas_material_handle = materials.add(material);
 
-        // // quad
-        // let plot_entity = commands
-        //     .spawn()
-        //     .insert_bundle(MaterialMesh2dBundle {
-        //         mesh: Mesh2dHandle(meshes.add(Mesh::from(shape::Quad::new(plot.canvas_size)))),
-        //         material: canvas_material_handle.clone(),
-        //         transform: Transform::from_translation(plot.canvas_position.extend(0.0001)),
-        //         ..Default::default()
-        //     })
-        //     .insert(event.canvas.clone())
-        //     .insert(event.plot_handle.clone())
-        //     .id();
-
         // In 0.15, we use the Mesh2d / MeshMaterial2d components.
         let plot_entity = commands
             .spawn((
                 // The quad itself
-                Mesh2dHandle(meshes.add(Mesh::from(shape::Quad::new(plot.canvas_size)))),
+                // Mesh2dHandle(meshes.add(Mesh::from(shape::Quad::new(plot.canvas_size)))),
+                Mesh2d(meshes.add(Mesh::from(bevy::math::prelude::Rectangle::from_size(plot.canvas_size)))),
                 // Our custom material
                 MeshMaterial2d(canvas_material_handle.clone()),
                 // Basic transform
@@ -398,28 +404,30 @@ pub(crate) fn spawn_graph(
                 GlobalTransform::default(),
                 // Our custom component
                 event.canvas.clone(),
-                // This handle so we can track the Plot asset
-                plot_handle.clone(),
+                // MAYBE THIS NEEDS TO BE A COMPONENT. it's just a type alias for a u32 right now
+                PlotIdComponent(plot_id),
             ))
             .id();
 
+        plots.plots.get_mut(&plot_id).unwrap().entity = Some(plot_entity);
+
         wait_for_update_labels_event.send(WaitForUpdatePlotLabelsEvent {
             quad_entity: plot_entity.clone(),
-            plot_handle: plot_handle.clone(),
+            plot_id: plot_id,
         });
 
         change_canvas_material_event.send(RespawnAllEvent {
             // canvas_material_handle: canvas_material_handle.clone(),
-            plot_handle: plot_handle.clone(),
+            plot_id,
         });
 
-        // spawn each analytical curve
-        plot.data.bezier_groups.iter().enumerate().for_each(|(k, _)| {
-            spawn_beziercurve_event.send(SpawnBezierCurveEvent {
-                group_number: k,
-                plot_handle: plot_handle.clone(),
-            })
-        });
+        // // spawn each analytical curve
+        // plot.data.bezier_groups.iter().enumerate().for_each(|(k, _)| {
+        //     spawn_beziercurve_event.send(SpawnBezierCurveEvent {
+        //         group_number: k,
+        //         plot_id,
+        //     })
+        // });
     }
 }
 fn format_numeric_label(plot: &Plot, label: f32, scientific_notation: bool) -> String {
@@ -439,60 +447,86 @@ fn format_numeric_label(plot: &Plot, label: f32, scientific_notation: bool) -> S
 pub(crate) fn update_mouse_target(
     // mut commands: Commands,
     mut my_canvas_mats: ResMut<Assets<CanvasMaterial>>,
-    mut my_plots: ResMut<Assets<Plot>>,
     //
     // canvas_query: Query<(Entity, &GraphSprite, &Handle<CanvasMaterial>)>,
-    canvas_query: Query<(Entity, &mut Handle<CanvasMaterial>, &Handle<Plot>)>,
+    mut canvas_query: Query<(Entity, &mut MeshMaterial2d<CanvasMaterial>, &PlotIdComponent)>,
     mut update_target_labels_event: EventWriter<UpdateTargetLabelEvent>,
 
     cursor: Res<Cursor>,
-    mouse_button_input: Res<Input<MouseButton>>,
+    mouse_button_input: Res<ButtonInput<MouseButton>>,
+    plots: Res<PlotMap>,
 ) {
     if mouse_button_input.pressed(MouseButton::Middle) {
-        for (canvas_entity, canvas_material_handle, plot_handle) in canvas_query.iter() {
+        for (canvas_entity, mut canvas_material, plot_id_component) in &mut canvas_query {
             // println!("{:?}", "CHANGING SHADER");
             // if let Some(plot) = my_canvas_mat.get_mut(plot_handle) {
-            if let Some(plot) = my_plots.get_mut(plot_handle) {
-                if let Some(canvas_material) = my_canvas_mats.get_mut(canvas_material_handle) {
-                    plot.compute_zeros();
 
-                    //
-                    if mouse_button_input.just_pressed(MouseButton::Middle) {
-                        plot.target_toggle = !plot.target_toggle;
-                    }
+            let plot_id = plot_id_component.0;
+            let plot = plots.plots.get(&plot_id).unwrap();
 
-                    if canvas_material.within_rect(cursor.position) {
-                        //
-                        plot.target_position = plot.world_to_plot(cursor.position);
-                        canvas_material.mouse_pos = plot.to_local(plot.target_position) + plot.canvas_position;
+            if let Some(canvas_material_instance) = my_canvas_mats.get_mut(&canvas_material.0) {
+                plot.compute_zeros();
 
-                        update_target_labels_event.send(UpdateTargetLabelEvent {
-                            plot_handle: plot_handle.clone(),
-                            canvas_entity,
-                            canvas_material_handle: canvas_material_handle.clone(),
-                        });
-                    }
+                if mouse_button_input.just_pressed(MouseButton::Middle) {
+                    plot.target_toggle = !plot.target_toggle;
+                }
+
+                if canvas_material_instance.within_rect(cursor.position) {
+                    plot.target_position = plot.world_to_plot(cursor.position);
+                    canvas_material_instance.mouse_pos = plot.to_local(plot.target_position) + plot.canvas_position;
+
+                    update_target_labels_event.send(UpdateTargetLabelEvent {
+                        plot_id: plot.id, // Assuming `plot.id` is a unique identifier
+                        canvas_entity,
+                        canvas_material_handle: canvas_material.0.clone(),
+                    });
                 }
             }
+
+            // if let Some(canvas_material) = my_canvas_mats.get_mut(canvas_material_handle) {
+            //     plot.compute_zeros();
+
+            //     //
+            //     if mouse_button_input.just_pressed(MouseButton::Middle) {
+            //         plot.target_toggle = !plot.target_toggle;
+            //     }
+
+            //     if canvas_material.within_rect(cursor.position) {
+            //         //
+            //         plot.target_position = plot.world_to_plot(cursor.position);
+            //         canvas_material.mouse_pos = plot.to_local(plot.target_position) + plot.canvas_position;
+
+            //         update_target_labels_event.send(UpdateTargetLabelEvent {
+            //             plot_handle: plot_handle.clone(),
+            //             canvas_entity,
+            //             canvas_material_handle: canvas_material_handle.clone(),
+            //         });
+            //     }
+            // }
         }
     }
 }
 
 pub(crate) fn change_plot(
     mut commands: Commands,
-    mut my_plots: ResMut<Assets<Plot>>,
-    canvas_query: Query<(Entity, &CanvasParams, &Handle<Plot>, &mut Handle<CanvasMaterial>)>,
+    mut my_plots: ResMut<PlotMap>,
+    canvas_query: Query<(
+        Entity,
+        &CanvasParams,
+        &PlotIdComponent,
+        &mut MeshMaterial2d<CanvasMaterial>,
+    )>,
 
-    keyboard_input: Res<Input<KeyCode>>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
     cursor: Res<Cursor>,
     mut mouse_motion_events: EventReader<MouseMotion>,
     mut mouse_wheel_events: EventReader<MouseWheel>,
-    mouse_button_input: Res<Input<MouseButton>>,
+    mouse_button_input: Res<ButtonInput<MouseButton>>,
 
     mut release_all_event: EventWriter<ReleaseAllEvent>,
     mut update_plot_labels_event: EventWriter<UpdatePlotLabelsEvent>,
     mut update_target_labels_event: EventWriter<UpdateTargetLabelEvent>,
-    mut windows: ResMut<Windows>,
+    mut window: Single<&Window>,
 ) {
     for (canvas_entity, graph_sprite, plot_handle, canvas_material_handle) in canvas_query.iter() {
         //
@@ -511,11 +545,11 @@ pub(crate) fn change_plot(
                     plot.clamp_tick_period();
 
                     update_plot_labels_event.send(UpdatePlotLabelsEvent {
-                        plot_handle: plot_handle.clone(),
+                        plot_id: plot_handle.clone(),
                         canvas_entity,
                     });
                     update_target_labels_event.send(UpdateTargetLabelEvent {
-                        plot_handle: plot_handle.clone(),
+                        plot_id: plot_handle.clone(),
                         canvas_entity,
                         canvas_material_handle: canvas_material_handle.clone(),
                     });
@@ -529,12 +563,12 @@ pub(crate) fn change_plot(
                 });
 
                 update_plot_labels_event.send(UpdatePlotLabelsEvent {
-                    plot_handle: plot_handle.clone(),
+                    plot_id: plot_handle.clone(),
                     canvas_entity,
                 });
 
                 update_target_labels_event.send(UpdateTargetLabelEvent {
-                    plot_handle: plot_handle.clone(),
+                    plot_id: plot_handle.clone(),
                     canvas_entity,
                     canvas_material_handle: canvas_material_handle.clone(),
                 });
@@ -593,9 +627,7 @@ pub(crate) fn adjust_graph_size(
     cursor: Res<Cursor>,
     mut update_labels_event: EventWriter<UpdatePlotLabelsEvent>,
 ) {
-    for (canvas_entity, mut graph_sprite, plot_handle, mat_handle, resize_corner, mut transform) in
-        canvas_query.iter_mut()
-    {
+    for (canvas_entity, mut graph_sprite, plot_handle, mat_handle, resize_corner, mut transform) in &mut canvas_query {
         //
 
         if let Some(canvas_material) = my_canvas_mat.get_mut(mat_handle) {
@@ -650,7 +682,7 @@ pub(crate) fn adjust_graph_size(
             canvas_material.size = graph_sprite.scale * graph_sprite.original_size;
 
             update_labels_event.send(UpdatePlotLabelsEvent {
-                plot_handle: plot_handle.clone(),
+                plot_id: plot_handle.clone(),
                 canvas_entity,
             });
 
@@ -688,18 +720,18 @@ pub(crate) fn adjust_graph_axes(
                 plot.compute_zeros();
 
                 update_plot_labels_event.send(UpdatePlotLabelsEvent {
-                    plot_handle: plot_handle.clone(),
+                    plot_id: plot_handle.clone(),
                     canvas_entity,
                 });
 
                 update_target_labels_event.send(UpdateTargetLabelEvent {
-                    plot_handle: plot_handle.clone(),
+                    plot_id: plot_handle.clone(),
                     canvas_entity,
                     canvas_material_handle: material_handle.clone(),
                 });
 
                 change_canvas_material_event.send(RespawnAllEvent {
-                    plot_handle: plot_handle.clone(),
+                    plot_id: plot_handle.clone(),
                     // canvas_material_handle: material_handle.clone(),
                 });
 
@@ -729,12 +761,12 @@ pub(crate) fn adjust_graph_axes(
             plot.compute_zeros();
 
             update_plot_labels_event.send(UpdatePlotLabelsEvent {
-                plot_handle: plot_handle.clone(),
+                plot_id: plot_handle.clone(),
                 canvas_entity,
             });
 
             update_target_labels_event.send(UpdateTargetLabelEvent {
-                plot_handle: plot_handle.clone(),
+                plot_id: plot_handle.clone(),
                 canvas_entity,
                 canvas_material_handle: material_handle.clone(),
             });
@@ -754,7 +786,7 @@ pub(crate) fn adjust_graph_axes(
         commands.entity(canvas_entity).remove::<ZoomAxes>();
 
         change_canvas_material_event.send(RespawnAllEvent {
-            plot_handle: plot_handle.clone(),
+            plot_id: plot_handle.clone(),
             // canvas_material_handle: material_handle.clone(),
         });
     }

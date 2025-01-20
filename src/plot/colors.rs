@@ -18,6 +18,19 @@ pub enum PlotColor {
     Yellow,
 }
 
+#[derive(Resource)]
+pub struct ColorPalette {
+    pub colors: HashMap<PlotColor, Vec<Color>>,
+}
+
+impl Default for ColorPalette {
+    fn default() -> Self {
+        Self {
+            colors: make_color_palette(),
+        }
+    }
+}
+
 /// To get a particular color, get the color from the hashmap with a key of the PlotColor enum.
 /// Then get the shade of this color from the Vec of colors, the higher the index the darker the shade.
 pub fn make_color_palette() -> HashMap<PlotColor, Vec<Color>> {

@@ -39,7 +39,7 @@ pub fn change_bezier_metaparameters_at_runtime(
                     // so we don't need to send it twice every frame.
                     if !bezier_data.show_animation {
                         event.send(UpdateBezierShaderEvent {
-                            plot_handle: plot_handle.clone(),
+                            plot_id: plot_handle.clone(),
                             entity,
                             group_number: curve_number.0,
                         });

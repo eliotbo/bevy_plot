@@ -28,18 +28,17 @@ impl Default for Cursor {
 
 pub(crate) fn record_mouse_events_system(
     mut cursor_moved_events: EventReader<CursorMoved>,
-    mouse_button_input: Res<Input<MouseButton>>,
+    mouse_button_input: Res<ButtonInput<MouseButton>>,
     mut cursor_res: ResMut<Cursor>,
-    mut windows: ResMut<Windows>,
+    // mut windows: ResMut<Windows>,
+    window: Single<&Window>,
     cam_transform_query: Query<&Transform, With<OrthographicProjection>>,
     cam_ortho_query: Query<&OrthographicProjection>,
 ) {
-    for event in cursor_moved_events.iter() {
+    for event in cursor_moved_events.read() {
         let cursor_in_pixels = event.position; // lower left is origin
-        let window_size = Vec2::new(
-            windows.get_primary_mut().unwrap().width(),
-            windows.get_primary_mut().unwrap().height(),
-        );
+
+        let window_size = Vec2::new(window.width(), window.height());
 
         let screen_position = cursor_in_pixels - window_size / 2.0;
 
@@ -56,11 +55,13 @@ pub(crate) fn record_mouse_events_system(
         //     * screen_position.extend(0.0).extend(1.0 / (scale))
         //     * scale;
 
-        let cursor_vec4: Mat4 = cam_transform.compute_matrix() * screen_position.extend(0.0).extend(1.0);
+        // let cursor_vec4: Mat4 = cam_transform.compute_matrix() * screen_position.extend(0.0).extend(1.0);
+        // let cursor_vec4: Vec4 = cam_transform.compute_matrix() * screen_position.extend(0.0).extend(1.0);
 
         let cursor_vec4 = cam_transform
             .compute_matrix()
-            .mul_vec4(screen_position.extend(0.0).extend(1.0));
+            .mul_vec4(screen_position.extend(0.0).extend(1.0 / scale))
+            * scale;
 
         let cursor_pos = Vec2::new(cursor_vec4.x, cursor_vec4.y);
         // let cursor_pos = Vec2::new(cursor_vec4.x, cursor_vec4.y) / cursor_vec4.w;

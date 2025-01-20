@@ -6,12 +6,14 @@ use bevy::{
     // render::render_resource::AsBindGroup,
 };
 
-use super::colors::make_color_palette;
+use super::colors::ColorPalette;
 use super::plot_format::*;
 
 use crate::canvas::*;
 use crate::inputs::*;
 use crate::util::*;
+
+use std::collections::HashMap;
 
 // use crate::bezier::*;
 // use crate::markers::*;
@@ -54,9 +56,10 @@ impl Plugin for PlotPlugin {
             .add_event::<UpdateBezierShaderEvent>()
             // .add_event::<SpawnBezierCurveEvent>()
             // .add_asset::<Plot>()
-            .insert_resource(make_color_palette())
+            .insert_resource(ColorPalette::default())
             .insert_resource(Cursor::default())
             .insert_resource(TickLabelFont { maybe_font: None })
+            .insert_resource(PlotMap::default())
             .add_systems(
                 Update,
                 (
@@ -138,25 +141,22 @@ impl Plugin for PlotPlugin {
 
 fn do_spawn_plot(
     mut commands: Commands,
-    mut plots: ResMut<Assets<Plot>>,
-    query: Query<(Entity, &Handle<Plot>)>,
+    // mut plots: ResMut<Assets<Plot>>,
+    mut plot_map: ResMut<PlotMap>,
+    // mut query: Query<(Entity, &mut Plot)>,
     mut spawn_plot_event: EventWriter<SpawnGraphEvent>,
 ) {
-    for (entity, plot_handle) in query.iter() {
-        let plot = plots.get_mut(plot_handle).unwrap();
+    for (id, mut plot) in &mut plot_map.plots {
+        // let plot = plots.get_mut(plot_handle).unwrap();
         if plot.do_spawn_plot {
             let canvas = plot.make_canvas();
 
             spawn_plot_event.send(SpawnGraphEvent {
                 canvas,
-                plot_handle: plot_handle.clone(),
+                plot_id: plot.id,
             });
 
             plot.do_spawn_plot = false;
-
-            // To access the plot handle, earlier we spawned a dummy entity with the plot handle.
-            // This entity's purpose has been served and it is time to despawn it already.
-            commands.entity(entity).despawn();
         }
     }
 }
@@ -174,21 +174,21 @@ pub struct TickLabelFont {
 /// them with the updated information.
 #[derive(Event)]
 pub struct RespawnAllEvent {
-    pub plot_handle: Handle<Plot>,
+    pub plot_id: PlotId,
 }
 
 /// See the animate.rs example, where [`UpdateBezierShaderEvent`] is used to tell bevy_plot that
 /// the view for an explicit function needs to be updated.
 #[derive(Event)]
 pub struct UpdateBezierShaderEvent {
-    pub plot_handle: Handle<Plot>,
+    pub plot_id: PlotId,
     pub entity: Entity,
     pub group_number: usize,
 }
 
 #[derive(Event)]
 pub(crate) struct WaitForUpdatePlotLabelsEvent {
-    pub plot_handle: Handle<Plot>,
+    pub plot_id: PlotId,
     pub quad_entity: Entity,
 }
 
@@ -251,7 +251,7 @@ impl Default for BezierData {
     fn default() -> Self {
         BezierData {
             function: |x: f32, _t: f32| x,
-            color: Color::rgb(0.2, 0.3, 0.8),
+            color: Color::srgb(0.2, 0.3, 0.8),
             size: 1.0,
             line_style: LineStyle::Solid,
             mech: false,
@@ -288,8 +288,8 @@ impl Default for MarkerData {
     fn default() -> Self {
         MarkerData {
             data: vec![],
-            color: Color::rgb(0.5, 0.5, 0.1),
-            marker_point_color: Color::rgb(0.2, 0.3, 0.8),
+            color: Color::srgb(0.5, 0.5, 0.1),
+            marker_point_color: Color::srgb(0.2, 0.3, 0.8),
             marker_style: MarkerStyle::Circle,
             size: 1.0,
             draw_contour: false,
@@ -317,7 +317,8 @@ impl Default for SegmentData {
     fn default() -> Self {
         SegmentData {
             data: vec![],
-            color: Color::hex("8eb274").unwrap(),
+            // color: Color::hex("8eb274").unwrap(),
+            color: Color::Srgba(Srgba::hex("8eb274").unwrap()),
             size: 1.0,
             line_style: LineStyle::Solid,
             draw_contour: false,
@@ -446,9 +447,38 @@ pub enum Opt {
     Contour(bool),
 }
 
+pub type PlotId = u32;
+
+#[derive(Component, TypePath, Debug, Clone, Default)]
+pub struct PlotIdComponent(pub PlotId);
+
+#[derive(Resource, TypePath, Debug, Clone, Default)]
+pub struct PlotMap {
+    pub plots: HashMap<PlotId, Plot>,
+}
+
+impl PlotMap {
+    pub fn get(&self, id: &u32) -> Option<&Plot> {
+        self.plots.get(id)
+    }
+
+    pub fn get_mut(&mut self, id: &u32) -> Option<&mut Plot> {
+        self.plots.get_mut(id)
+    }
+
+    pub fn insert(&mut self, id: PlotId, plot: Plot) {
+        self.plots.insert(id, plot);
+    }
+}
+
 /// Contains all relevant information to both the look of the canvas and the data to be plotted.
-#[derive(Asset, TypePath, Debug, Clone)]
+#[derive(Component, TypePath, Debug, Clone)]
 pub struct Plot {
+    /// id for the plot, can collide with other plots, but unlikely
+    pub id: PlotId,
+
+    pub entity: Option<Entity>,
+
     /// mouse position in the reference frame of the graph, corresponding to its axes
     pub plot_coord_mouse_pos: Vec2,
 
@@ -528,8 +558,13 @@ pub struct Plot {
 impl Default for Plot {
     fn default() -> Plot {
         let size = Vec2::new(800.0, 500.0);
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+        let id = rng.gen();
 
         let mut plot = Plot {
+            id,
+            entity: None,
             plot_coord_mouse_pos: Vec2::ZERO,
 
             tick_period: Vec2::new(0.2, 0.2),
@@ -543,8 +578,8 @@ impl Default for Plot {
             zoom: 1.0,
 
             show_grid: true,
-            background_color1: Color::rgba(0.048, 0.00468, 0.0744, 1.0),
-            background_color2: Color::rgba(0.0244, 0.0023, 0.0372, 1.0),
+            background_color1: Color::srgba(0.048, 0.00468, 0.0744, 1.0),
+            background_color2: Color::srgba(0.0244, 0.0023, 0.0372, 1.0),
 
             canvas_size: size.clone(),
             outer_border: Vec2::new(0.03 * size.y / size.x, 0.03),
@@ -558,8 +593,8 @@ impl Default for Plot {
             show_target: false,
             target_toggle: false,
             tick_label_color: Color::BLACK,
-            target_label_color: Color::GRAY,
-            target_color: Color::GRAY,
+            target_label_color: Color::srgba(0.5, 0.5, 0.5, 1.0),
+            target_color: Color::srgba(0.5, 0.5, 0.5, 1.0),
             target_position: Vec2::new(0.0, 0.0),
             target_significant_digits: 2,
 

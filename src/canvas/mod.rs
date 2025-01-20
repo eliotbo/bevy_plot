@@ -16,14 +16,15 @@ pub use canvas_actions::*;
 //     sprite::{Material2d, Material2dPipeline, Material2dPlugin},
 // };
 
+use crate::plot::*;
+use crate::util::*;
 use bevy::prelude::*;
 use bevy::reflect::TypePath;
 use bevy::render::render_resource::AsBindGroup;
 use bevy::render::render_resource::*;
 use bevy::sprite::{Material2d, Material2dPlugin};
-
-use crate::plot::*;
-use crate::util::*;
+use bevy::window::SystemCursorIcon;
+use bevy::winit::cursor::CursorIcon;
 
 #[derive(Component)]
 pub(crate) struct PlotLabel;
@@ -33,7 +34,7 @@ pub(crate) struct TargetLabel;
 
 #[derive(Event)]
 pub(crate) struct SpawnGraphEvent {
-    pub plot_handle: Handle<Plot>,
+    pub plot_id: PlotId,
     pub canvas: CanvasParams,
 }
 
@@ -125,7 +126,7 @@ impl CanvasParams {
         }
     }
 
-    pub(crate) fn hovered_on_plot_edges(&self, position: Vec2, windows: &mut ResMut<Windows>) {
+    pub(crate) fn hovered_on_plot_edges(&self, position: Vec2, window_entity: Entity, mut commands: Commands) {
         let size = self.original_size * self.scale;
 
         let top_right = self.position + Vec2::new(size.x / 2.0, size.y / 2.0);
@@ -134,30 +135,39 @@ impl CanvasParams {
         let bottom_right = self.position + Vec2::new(size.x / 2.0, -size.y / 2.0);
 
         let mut set_to_default_cursor = true;
-        let window = windows.get_primary_mut().unwrap();
 
         if (top_left - position).length() < self.hover_radius {
-            window.set_cursor_icon(CursorIcon::NwResize);
+            commands
+                .entity(window_entity)
+                .insert(CursorIcon::System(SystemCursorIcon::NwResize));
             set_to_default_cursor = false;
         }
 
         if (top_right - position).length() < self.hover_radius {
-            window.set_cursor_icon(CursorIcon::NeResize);
+            commands
+                .entity(window_entity)
+                .insert(CursorIcon::System(SystemCursorIcon::NeResize));
             set_to_default_cursor = false;
         }
 
         if (bottom_left - position).length() < self.hover_radius {
-            window.set_cursor_icon(CursorIcon::SwResize);
+            commands
+                .entity(window_entity)
+                .insert(CursorIcon::System(SystemCursorIcon::SwResize));
             set_to_default_cursor = false;
         }
 
         if (bottom_right - position).length() < self.hover_radius {
-            window.set_cursor_icon(CursorIcon::SeResize);
+            commands
+                .entity(window_entity)
+                .insert(CursorIcon::System(SystemCursorIcon::SeResize));
             set_to_default_cursor = false;
         }
 
         if set_to_default_cursor {
-            window.set_cursor_icon(CursorIcon::Default);
+            commands
+                .entity(window_entity)
+                .insert(CursorIcon::System(SystemCursorIcon::Default));
         }
     }
 }
@@ -174,13 +184,13 @@ pub(crate) struct ZoomAxes {
 
 #[derive(Event)]
 pub(crate) struct UpdatePlotLabelsEvent {
-    pub plot_handle: Handle<Plot>,
+    pub plot_id: PlotId,
     pub canvas_entity: Entity,
 }
 
 #[derive(Event)]
 pub(crate) struct UpdateTargetLabelEvent {
-    pub plot_handle: Handle<Plot>,
+    pub plot_id: PlotId,
     pub canvas_entity: Entity,
     pub canvas_material_handle: Handle<CanvasMaterial>,
     // pub mouse_pos: Vec2,
