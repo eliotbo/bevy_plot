@@ -20,16 +20,16 @@ fn setup(
     asset_server: Res<AssetServer>,
     mut maybe_font: ResMut<TickLabelFont>,
 ) {
-    commands.spawn_bundle(OrthographicCameraBundle::new_2d());
+    commands.spawn_bundle(Camera2dBundle::default());
     let font: Handle<Font> = asset_server.load("fonts/Roboto-Bold.ttf");
     maybe_font.maybe_font = Some(font);
 
     let mut plot = Plot::default();
     plot.canvas_size = Vec2::new(790.0, 590.0);
 
-    // plot.show_axes = false;
-    // plot.show_grid = false;
-    // plot.hide_contour = true;
+    plot.show_target = true;
+    plot.show_grid = true;
+    plot.hide_contour = true;
     // plot.hide_tick_labels = true;
 
     // // transparent background

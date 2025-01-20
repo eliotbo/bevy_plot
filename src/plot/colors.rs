@@ -25,7 +25,7 @@ pub fn make_color_palette() -> HashMap<PlotColor, Vec<Color>> {
         .iter()
         .map(
             // to hex
-            |h| Color::hex(h).unwrap(),
+            |h| Color::Srgba(Srgba::hex(h).unwrap()),
         )
         .collect::<Vec<Color>>();
 
@@ -33,7 +33,7 @@ pub fn make_color_palette() -> HashMap<PlotColor, Vec<Color>> {
         .iter()
         .map(
             // to hex
-            |h| Color::hex(h).unwrap(),
+            |h| Color::Srgba(Srgba::hex(h).unwrap()),
         )
         .collect::<Vec<Color>>();
 
@@ -41,7 +41,7 @@ pub fn make_color_palette() -> HashMap<PlotColor, Vec<Color>> {
         .iter()
         .map(
             // to hex
-            |h| Color::hex(h).unwrap(),
+            |h| Color::Srgba(Srgba::hex(h).unwrap()),
         )
         .collect::<Vec<Color>>();
 
@@ -49,7 +49,7 @@ pub fn make_color_palette() -> HashMap<PlotColor, Vec<Color>> {
         .iter()
         .map(
             // to hex
-            |h| Color::hex(h).unwrap(),
+            |h| Color::Srgba(Srgba::hex(h).unwrap()),
         )
         .collect::<Vec<Color>>();
 
@@ -57,7 +57,7 @@ pub fn make_color_palette() -> HashMap<PlotColor, Vec<Color>> {
         .iter()
         .map(
             // to hex
-            |h| Color::hex(h).unwrap(),
+            |h| Color::Srgba(Srgba::hex(h).unwrap()),
         )
         .collect::<Vec<Color>>();
 
@@ -65,7 +65,7 @@ pub fn make_color_palette() -> HashMap<PlotColor, Vec<Color>> {
         .iter()
         .map(
             // to hex
-            |h| Color::hex(h).unwrap(),
+            |h| Color::Srgba(Srgba::hex(h).unwrap()),
         )
         .collect::<Vec<Color>>();
 
@@ -73,7 +73,7 @@ pub fn make_color_palette() -> HashMap<PlotColor, Vec<Color>> {
         .iter()
         .map(
             // to hex
-            |h| Color::hex(h).unwrap(),
+            |h| Color::Srgba(Srgba::hex(h).unwrap()),
         )
         .collect::<Vec<Color>>();
 
@@ -81,7 +81,7 @@ pub fn make_color_palette() -> HashMap<PlotColor, Vec<Color>> {
         .iter()
         .map(
             // to hex
-            |h| Color::hex(h).unwrap(),
+            |h| Color::Srgba(Srgba::hex(h).unwrap()),
         )
         .collect::<Vec<Color>>();
 
@@ -89,7 +89,7 @@ pub fn make_color_palette() -> HashMap<PlotColor, Vec<Color>> {
         .iter()
         .map(
             // to hex
-            |h| Color::hex(h).unwrap(),
+            |h| Color::Srgba(Srgba::hex(h).unwrap()),
         )
         .collect::<Vec<Color>>();
 
@@ -97,7 +97,7 @@ pub fn make_color_palette() -> HashMap<PlotColor, Vec<Color>> {
         .iter()
         .map(
             // to hex
-            |h| Color::hex(h).unwrap(),
+            |h| Color::Srgba(Srgba::hex(h).unwrap()),
         )
         .collect::<Vec<Color>>();
 
@@ -105,7 +105,7 @@ pub fn make_color_palette() -> HashMap<PlotColor, Vec<Color>> {
         .iter()
         .map(
             // to hex
-            |h| Color::hex(h).unwrap(),
+            |h| Color::Srgba(Srgba::hex(h).unwrap()),
         )
         .collect::<Vec<Color>>();
 
@@ -113,7 +113,7 @@ pub fn make_color_palette() -> HashMap<PlotColor, Vec<Color>> {
         .iter()
         .map(
             // to hex
-            |h| Color::hex(h).unwrap(),
+            |h| Color::Srgba(Srgba::hex(h).unwrap()),
         )
         .collect::<Vec<Color>>();
 

@@ -9,6 +9,7 @@ use bevy::{
 // use crate::markers::SpawnMarkersEvent;
 // use crate::util::*;
 
+#[derive(Resource)]
 pub(crate) struct Cursor {
     pub position: Vec2,
     pub pos_relative_to_click: Vec2,
@@ -51,11 +52,19 @@ pub(crate) fn record_mouse_events_system(
             scale = ortho.scale;
         }
 
-        let cursor_vec4: Vec4 = cam_transform.compute_matrix()
-            * screen_position.extend(0.0).extend(1.0 / (scale))
-            * scale;
+        // let cursor_vec4: Vec4 = cam_transform.compute_matrix()
+        //     * screen_position.extend(0.0).extend(1.0 / (scale))
+        //     * scale;
+
+        let cursor_vec4: Mat4 = cam_transform.compute_matrix() * screen_position.extend(0.0).extend(1.0);
+
+        let cursor_vec4 = cam_transform
+            .compute_matrix()
+            .mul_vec4(screen_position.extend(0.0).extend(1.0));
 
         let cursor_pos = Vec2::new(cursor_vec4.x, cursor_vec4.y);
+        // let cursor_pos = Vec2::new(cursor_vec4.x, cursor_vec4.y) / cursor_vec4.w;
+
         cursor_res.position = cursor_pos;
         cursor_res.pos_relative_to_click = cursor_res.position - cursor_res.last_click_position;
     }

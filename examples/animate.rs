@@ -26,7 +26,8 @@ fn setup(
     colors_res: Res<HashMap<PlotColor, Vec<Color>>>,
     mut plots: ResMut<Assets<Plot>>,
 ) {
-    commands.spawn_bundle(OrthographicCameraBundle::new_2d());
+    // commands.spawn_bundle(OrthographicCameraBundle::new_2d());
+    commands.spawn_bundle(Camera2dBundle::default());
 
     let colors = colors_res.as_ref();
 

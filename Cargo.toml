@@ -1,6 +1,6 @@
 [package]
 name = "bevy_plot"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2021"
 authors = ["Eliot Bolduc"]
 description = "A Bevy plugin for plotting data and explicit functions."
@@ -18,42 +18,50 @@ categories = [
 
 
 [dependencies]
-bevy = { version = "0.7.0", default-features = false, features = [
-    "render",
+bevy = { version = "0.15.1", default-features = false, features = [
+    "bevy_render",
     "x11",
+    "bevy_asset",
+    "file_watcher",
+    "multi_threaded",
+    "bevy_sprite",
+    "bevy_picking",
+    # "bevy_sprite_picking_backend",
 ] }
 itertools-num = "0.1"
 bytemuck = "1.7"
 rand = "0.8"
+bevy_picking = { version = "0.15.0-rc.3" } # why do we need this?
+# crevice = "0.11"
 
 [features]
 default = []
 unstable = []
 
-[[example]]
-name = "bevy"
-path = "examples/bevy.rs"
+# [[example]]
+# name = "bevy"
+# path = "examples/bevy.rs"
 
-[[example]]
-name = "markers"
-path = "examples/markers.rs"
+# [[example]]
+# name = "markers"
+# path = "examples/markers.rs"
 
-[[example]]
-name = "minimal"
-path = "examples/minimal.rs"
+# [[example]]
+# name = "minimal"
+# path = "examples/minimal.rs"
 
-[[example]]
-name = "func"
-path = "examples/func.rs"
+# [[example]]
+# name = "func"
+# path = "examples/func.rs"
 
-[[example]]
-name = "animate"
-path = "examples/animate.rs"
+# [[example]]
+# name = "animate"
+# path = "examples/animate.rs"
 
-[[example]]
-name = "runtime_setter"
-path = "examples/runtime_setter.rs"
+# [[example]]
+# name = "runtime_setter"
+# path = "examples/runtime_setter.rs"
 
-[[example]]
-name = "gege"
-path = "examples/gege.rs"
+# [[example]]
+# name = "gege"
+# path = "examples/gege.rs"

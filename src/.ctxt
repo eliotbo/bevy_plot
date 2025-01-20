@@ -1,0 +1,4230 @@
+src
+├── .ctxt
+├── bezier
+│   ├── bezier.rs
+│   ├── bezier_backup.rs
+│   ├── bezier_render_backup.wgsl
+│   ├── bezier_spline.wgsl
+│   ├── mod.rs
+├── bezier2
+│   ├── mod.rs
+│   ├── segments.rs
+├── canvas
+│   ├── Roboto-Bold.ttf
+│   ├── canvas.wgsl
+│   ├── canvas_actions.rs
+│   ├── mod.rs
+├── inputs.rs
+├── lib.rs
+├── main2.rs
+├── markers
+│   ├── markers.wgsl
+│   ├── mod.rs
+├── plot
+│   ├── colors.rs
+│   ├── mod.rs
+│   ├── plot.rs
+│   ├── plot_format.rs
+├── segments
+│   ├── mod.rs
+│   ├── segments.rs
+│   ├── segments.wgsl
+├── util.rs
+
+
+
+File: mod.rs
+
+mod colors;
+pub mod plot;
+pub mod plot_format;
+
+pub use colors::*;
+pub use plot::*;
+pub use plot_format::*;
+
+
+File: lib.rs
+
+//! Plotting library for the Bevy game engine. To quickly get started, run a Bevy `App`, add the
+//! [`PlotPlugin`] to the `App`, instantiate a [`Plot`] struct, and either use the
+//! * [`Plot::plot`]`(my_data: impl `[`Plotable`]`)` method for a regular graph, the
+//! * [`Plot::plotm`]`(my_data: impl `[`Plotable`]`)` method for a scatter plot (or plot with markers), or the
+//! * [`Plot::plot_func`]`(my_function: fn(f32, f32) -> 32)` method that supports plotting of explicit functions.
+//!
+//! The `my_data` argument of either of the first two methods has to implement the [`Plotable`] trait
+//! (e.g. `Vec<Vec2>`, `Vec<(f32, f32)>`, `Vec<f32>`, etc.). In the third option,
+//! `my_function` is an explicit function that takes two arguments (x and time) and returns a `f32`.
+//!
+//! The following code can be found in examples/minimal.rs:
+//! ```
+//!  use bevy::prelude::*;
+//!  use bevy_plot::*;
+//!  
+//!  fn main() {
+//!      App::new()
+//!          .add_plugins(DefaultPlugins)
+//!          .add_plugin(PlotPlugin)
+//!          .add_startup_system(setup)
+//!          .run();
+//!  }
+//!  
+//!  fn setup(mut commands: Commands, mut plots: ResMut<Assets<Plot>>) {
+//!      commands.spawn_bundle(OrthographicCameraBundle::new_2d());
+//!  
+//!      let mut plot = Plot::default();
+//!  
+//!      let xs = (0..30).map(|i| i as f32 / 30.0).collect::<Vec<f32>>();
+//!  
+//!      let ys = xs
+//!          .iter()
+//!          .map(|x| Vec2::new(*x, 0.5 * x))
+//!          .collect::<Vec<Vec2>>();
+//!  
+//!      plot.plot(ys);
+//!  
+//!      let plot_handle = plots.add(plot.clone());
+//!      commands.spawn().insert(plot_handle);
+//!  }
+//! ```
+//!
+//!
+//! For customizing the look of the curves and markers, see the [`Opt`] enum for the
+//! available options together with the [`Plot::plotopt`] and
+//! [`Plot::plotopt_func`] methods. For customizing the canvas (grid, colors, etc...), see the [`Plot`] fields.
+//! Setting the range of the x and y axes is done with the [`Plot::set_bounds`]`(lo, up)` method, but bevy_plot
+//! panics if `lo.x > up.x or lo.y > up.y`.
+//!
+//! Note that the library allows the user to
+//! * zoom in and out with the mousewheel,
+//! * move the origin with the mouse by pressing and dragging,
+//! * spawn a target and the corresponding coordinates by pressing the middle mouse button, and
+//! * change the Plot fields at runtime (see examples/runtime_setter.rs).
+
+mod plot;
+pub use plot::*;
+
+mod bezier;
+mod canvas;
+mod inputs;
+mod markers;
+mod segments;
+mod util;
+
+
+
+
+
+
+
+File: plot.rs
+
+use bevy::{
+    // asset::Assets,
+    prelude::*, reflect::TypeUuid,
+    sprite::Material2dPlugin,
+    render::render_resource::AsBindGroup,
+};
+use crevice::std140::AsStd140;
+use super::plot_format::*;
+use super::colors::make_color_palette;
+
+use crate::canvas::*;
+use crate::bezier::*;
+
+use crate::inputs::*;
+use crate::markers::*;
+use crate::util::*;
+use crate::segments::*;
+
+/// Main plugin for bevy_plot
+pub struct PlotPlugin;
+
+// z planes from bottom to top:
+//
+// canvas: 0.0001
+// text and labels: 1.0001
+// bezier 1.10
+// segments: 1.11
+// markers: 1.12
+// target text: 1.2
+
+// TODO:
+// 1) Area under the curve
+// 2) Automatically color curve, segments and markers with palette
+// 3) Global variable for z planes
+// 4) optimize
+// 5) add 3d mesh materials
+
+impl Plugin for PlotPlugin {
+    fn build(&self, app: &mut App) {
+        app
+             // canvas
+            .add_plugin(Material2dPlugin::<CanvasMaterial>::default())
+            
+            .add_plugin(MarkerMesh2dPlugin)
+            .add_plugin(BezierMesh2dPlugin)
+            .add_plugin(SegmentMesh2dPlugin)
+            .add_plugin(CanvasMesh2dPlugin)
+            .add_event::<SpawnGraphEvent>()
+            .add_event::<ReleaseAllEvent>()
+            .add_event::<UpdatePlotLabelsEvent>()
+            .add_event::<RespawnAllEvent>()
+            .add_event::<WaitForUpdatePlotLabelsEvent>()
+            .add_event::<UpdateTargetLabelEvent>()
+            .add_event::<UpdateBezierShaderEvent>()
+            .add_event::<SpawnBezierCurveEvent>()
+            .add_asset::<Plot>()
+            .insert_resource(make_color_palette())
+            .insert_resource(Cursor::default())
+            .insert_resource(TickLabelFont {maybe_font: None})
+
+            .add_system_set(
+                SystemSet::new().label("model").before("shader_updates")             
+                .with_system(adjust_graph_axes)
+                .with_system(change_plot)
+            )
+
+            .add_system_set(
+                SystemSet::new().label("shader_updates").before("other")
+                .with_system(update_bezier_uniform)
+                .with_system(spawn_bezier_function)
+                .with_system(wait_for_graph_spawn)
+            )
+       
+            .add_system_set(
+                SystemSet::new().label("other").after("shader_updates")
+                .with_system(release_all)
+                .with_system(spawn_graph)
+                .with_system(adjust_graph_size)
+                .with_system(record_mouse_events_system)
+                .with_system(update_mouse_target)
+                .with_system(update_plot_labels)
+                .with_system(update_target)
+                .with_system(do_spawn_plot)
+                .with_system(animate_bezier)
+            )
+            .add_system_set(
+                SystemSet::new().label("setups").after("other")
+                .with_system(segments_setup).label("seg")
+                // .with_system(markers_setup)
+            )
+            // why the markers setup needs to be after the segments setup is a
+            // graphics mystery. The markers use instancing and the segments do not.
+            // We lose performance because these two systems are not running in
+            // parallel.
+            .add_system(markers_setup.exclusive_system().at_end())
+            // ...
+            ;
+    }
+}
+
+
+fn do_spawn_plot(
+    mut commands: Commands,
+    mut plots: ResMut<Assets<Plot>>, 
+    query: Query<(Entity, &Handle<Plot>)>,
+    mut spawn_plot_event: EventWriter<SpawnGraphEvent>
+) {
+    for (entity, plot_handle) in query.iter() {
+        let plot = plots.get_mut(plot_handle).unwrap();
+        if plot.do_spawn_plot {
+
+            let canvas = plot.make_canvas();
+
+            spawn_plot_event.send(SpawnGraphEvent {
+                canvas,
+                plot_handle: plot_handle.clone(),
+            });
+
+            plot.do_spawn_plot = false;
+
+            // To access the plot handle, earlier we spawned a dummy entity with the plot handle.
+            // This entity's purpose has been served and it is time to despawn it already.
+            commands.entity(entity).despawn();
+        }
+    }
+}
+
+/// Handle to the type of font to use for tick labels. If None is given (default), 
+/// the tick labels are not rendered.
+pub struct TickLabelFont {
+    pub maybe_font: Option<Handle<Font>>,
+}
+
+/// Upon modifying any of the plot fields, use this event to update the the view (shaders).
+/// For updating a scatter plot (markers) or a regular plot (segments), send
+/// the RespawnAllEvent event. Bevy Plot will then despawn all the entities and respawn
+/// them with the updated information.
+pub struct RespawnAllEvent {
+    pub plot_handle: Handle<Plot>,
+}
+
+/// See the animate.rs example, where [`UpdateBezierShaderEvent`] is used to tell bevy_plot that
+/// the view for an explicit function needs to be updated.
+pub struct UpdateBezierShaderEvent {
+    pub plot_handle: Handle<Plot>,
+    pub entity: Entity,
+    pub group_number: usize,
+}
+
+pub(crate) struct WaitForUpdatePlotLabelsEvent {
+    pub plot_handle: Handle<Plot>,
+    pub quad_entity: Entity,
+}
+
+/// Component that serves as identification for the nth curve group of the `bezier_groups` field
+/// of [`PlotData`].
+#[derive(Component)]
+pub struct BezierCurveNumber(pub usize);
+
+
+
+#[derive(Debug, Clone, AsBindGroup)]
+pub(crate) struct PlotCanvasBounds {
+    pub up: Vec2,
+    pub lo: Vec2,
+}
+
+
+
+
+#[derive(Debug, Clone)]
+/// Struct containing the data to be plotted and metaparameters of any explicit function plot. 
+/// It can be found in  the `data.bezier_groups` sub-field of a [`Plot`]. The reason for its name is
+/// that bevy_plot interpolates between samples of the function using quadratic bezier curves.
+pub struct BezierData {
+    /// Function to be displayed
+    pub function: fn(f32, f32) -> f32,
+    /// Thickness of the segments
+    pub size: f32,
+    /// Not implemented yet
+    pub line_style: LineStyle,
+
+    /// Color of the curve
+    pub color: Color,
+
+    /// If true, the function is displayed with visual mechanical joints
+    pub mech: bool,
+
+    /// The number of samples that bevy_plot uses to draw the
+    /// function with quadratic interpolation between each sample
+    pub num_points: usize,
+
+    /// If true, bevy_plot recomputes the `function` field every frame
+    pub show_animation: bool,
+}
+
+impl Default for BezierData {
+    fn default() -> Self {
+        BezierData {
+            function: |x: f32, _t: f32| x, 
+            color: Color::rgb(0.2, 0.3, 0.8),
+            size: 1.0,
+            line_style: LineStyle::Solid,
+            mech: false,
+            num_points: 256,
+            show_animation: false,
+        }
+    }
+}
+
+
+/// Struct containing the data to be plotted and metaparameters of a marker (or scatter) plot.
+/// It can be found in the `data.marker_groups` sub-field of a [`Plot`].
+#[derive(Debug, Clone)]
+pub struct MarkerData {
+    /// The data to be displayed in the scatter plot
+    pub data: Vec<Vec2>,
+
+    /// The main color of the markers
+    pub color: Color,
+
+    /// The color of tiny circle centered exactly at the data point
+    pub marker_point_color: Color,
+
+    /// Determines the shape of the markers
+    pub marker_style: MarkerStyle,
+
+    /// Size of the markers, clamped between 0.2 and 2.0
+    pub size: f32,
+
+    /// If true, the markers are displayed with a black border
+    pub draw_contour: bool,
+}
+
+impl Default for MarkerData {
+    fn default() -> Self {
+        MarkerData {
+            data: vec![],
+            color: Color::rgb(0.5, 0.5, 0.1),
+            marker_point_color: Color::rgb(0.2, 0.3, 0.8),
+            marker_style: MarkerStyle::Circle,
+            size: 1.0,
+            draw_contour: false,
+        }
+    }
+}
+
+/// Struct containing the data to be plotted and metaparameters of a segment (or regular) plot.
+/// It can be found in  the `data.segment_groups` sub-field of a [`Plot`].
+#[derive(Debug, Clone)]
+pub struct SegmentData {
+    /// The data to be displayed in the regular plot
+    pub data: Vec<Vec2>,
+    /// Color of the segments
+    pub color: Color,
+    /// Thickness of the segments
+    pub size: f32,
+    /// If the `line_style` is set to `LineStyle::None`, the segments are not drawn
+    pub line_style: LineStyle,
+    pub draw_contour: bool,
+    pub mech: bool,
+}
+
+impl Default for SegmentData {
+    fn default() -> Self {
+        SegmentData {
+            data: vec![],
+            color: Color::hex("8eb274").unwrap(),
+            size: 1.0,
+            line_style: LineStyle::Solid,
+            draw_contour: false,
+            mech: false,
+        }
+    }
+}
+
+/// The data for each type of plot has to be accessed though this struct first. Each element of a `Vec`
+/// corresponds to a particular curve on the graph.
+#[derive(Debug, Clone)]
+pub struct PlotData {
+    pub marker_groups: Vec<MarkerData>,
+    pub segment_groups: Vec<SegmentData>,
+    pub bezier_groups: Vec<BezierData>,
+    
+}
+
+impl Default for PlotData {
+    fn default() -> Self {
+        PlotData {
+            marker_groups: Vec::new(),
+            segment_groups: Vec::new(),
+            bezier_groups: Vec::new(), 
+        }
+    }
+}
+
+/// Type of markers for a given marker plot.
+#[derive(Debug, Clone, PartialEq)]
+pub enum MarkerStyle {
+    None,
+    Circle,
+    Square,
+    Triangle,
+    Heart,
+    Cross,
+    Rhombus,
+    Star,
+    Moon,
+    X,
+}
+
+impl MarkerStyle {
+    pub fn to_int32(&self) -> i32 {
+        match self {
+            MarkerStyle::None => -1,
+            MarkerStyle::Square => 0,
+            MarkerStyle::Heart => 1,
+            MarkerStyle::Triangle => 3,
+            MarkerStyle::Rhombus => 2,
+            MarkerStyle::Star => 4,
+            MarkerStyle::Moon => 5,
+            MarkerStyle::Cross => 6,
+            MarkerStyle::X => 7,
+            MarkerStyle::Circle => 8, 
+        }
+    }
+}
+
+/// The ```None``` variant can be used to avoid spawning the 
+/// segments of a regular plot when calling plotopt(), leaving only the markers.
+#[derive(Debug, Clone, PartialEq)]
+pub enum LineStyle{
+    None,
+    Solid,
+
+    // // unimplemented
+    // Dashed,
+    // Dotted,
+    // DashDot,
+    // DashDotDot,
+}
+
+impl LineStyle {
+    pub fn to_int32(&self) -> i32 {
+        match self {
+            LineStyle::None => -1,
+            LineStyle::Solid => 0,
+            // LineStyle::Dashed => 1,
+            // LineStyle::Dotted => 2,
+            // LineStyle::DashDot => 3,
+            // LineStyle::DashDotDot => 4,
+        }
+    }
+}
+
+/// Options for customizing the appearance of the plot.
+#[derive(Debug, Clone, PartialEq)]
+// Options as the second argument the of plotop method
+pub enum Opt {
+    /// Main color. Shared between [`Plot::plotopt_func`]` and [`Plot::plotopt`]
+    Color(Color),
+
+    /// Thickness of a curve or segment. Shared between [`Plot::plotopt_func`]` and [`Plot::plotopt`]
+    Size(f32),
+
+    /// Either [`LineStyle::None`] or [`LineStyle::Solid`]. The former can be used to
+    /// avoid spawning either the segments or the bezier curves, depending on the type of plot.
+    LineStyle(LineStyle),
+
+    /// If true, the shader will draw joints between the segments of a regular plot or the 
+    /// parts of a func curve.
+    Mech(bool),
+    
+    /// Determines the number of separate parts in a func plot. 
+    /// Works with [`Plot::plotopt`] only.
+    NumPoints(usize),
+
+    /// If true, bevy_plot computes the `function` field of [`BezierData`] at every frame.
+    /// Needs to be used in conjunction with a function that explicitly depends on time.
+    Animate(bool),
+
+    /// Main color of the markers.
+    MarkerColor(Color),
+
+    /// Size of the markers.
+    MarkerSize(f32),
+
+    /// Determines the shape of the markers.
+    MarkerStyle(MarkerStyle),
+
+    /// Color of the tiny circle centered exactly at the data point. To turn this features off,
+    /// simply chose the same color as the `MarkerColor`.
+    MarkerInnerPointColor(Color),
+
+    /// If true, the markers are displayed with a black border.
+    Contour(bool),
+    
+}
+
+/// Contains all relevant information to both the look of the canvas and the data to be plotted.
+#[derive(Debug, Clone, Component, TypeUuid)]
+#[uuid = "a6354c45-cc21-48f7-99cc-8c1924d2427b"]
+pub struct Plot {
+    /// mouse position in the reference frame of the graph, corresponding to its axes
+    pub plot_coord_mouse_pos: Vec2,
+
+    /// Position of the canvas in `World` coordinates
+    pub canvas_position: Vec2,
+
+    /// Distance between consecutive grid lines
+    pub tick_period: Vec2,
+    
+    /// Size of the margins with respect to the canvas_size. The default is set to `Vec2::new(0.03 * size.y / size.x, 0.03)`
+    pub outer_border: Vec2,
+
+    /// Size of the graph in pixels
+    pub canvas_size: Vec2,
+
+    /// Color of even tiles
+    pub background_color1: Color,
+
+    /// Color of odd tiles
+    pub background_color2: Color,
+
+    /// The grid is shown by default
+    pub show_grid: bool,
+
+    /// Position of the origin of the graph in `World` coordinates
+    pub zero_world: Vec2,
+
+    /// unused
+    pub time: f32,
+
+    /// The current zoom value: adjustable with the `MouseWheel`
+    pub zoom: f32,
+
+    /// Hides the black contour around the canvas
+    pub hide_contour: bool,
+
+    /// Hides numeric labels by the side of the grid lines
+    pub hide_tick_labels: bool,
+
+    /// Hides half the numeric tick labels for a less crowded feel
+    pub hide_half_ticks: bool,
+
+    /// Color for the numerical labels shown by the side of the grid lines
+    pub tick_label_color: Color,
+
+    /// Adjusts the number of significant digits for the tick labels
+    pub significant_digits: usize,
+
+    /// A target can be spawned together with a pair of coordinates by pressing `MouseButton::Middle`
+    pub show_target: bool,
+
+    /// The color for the coordinate pair by the side of the target
+    pub target_label_color: Color,
+
+    /// Color of the target
+    pub target_color: Color,
+    
+    /// Number of significant digits for the target coordinates
+    pub target_significant_digits: usize,
+
+    /// Axes are shown by default
+    pub show_axes: bool,
+
+    /// The number of samples taken on the explicit function provided to [`Plot::plot_func`]` or [`Plot::plotopt_func`] functions
+    pub bezier_num_points: usize,
+
+    /// Contains the data and metaparameters needed for drawing each kind of plot
+    pub data: PlotData,
+    
+    pub(crate) target_position: Vec2,
+    pub(crate) target_toggle: bool,
+    pub(crate) bounds: PlotCanvasBounds,
+    pub(crate) bezier_dummy: f32,
+    pub(crate) do_spawn_plot: bool,
+}
+
+impl Default for Plot {
+    fn default() -> Plot {
+        let size = Vec2::new(800.0, 500.0);
+
+        let mut plot = Plot {
+            plot_coord_mouse_pos: Vec2::ZERO,
+
+            tick_period: Vec2::new(0.2, 0.2),
+
+            bounds: PlotCanvasBounds {
+                up: Vec2::new(1.2, 1.2), 
+                lo: Vec2::new(-0.2, -0.2),
+            },
+
+            time: 0.0,
+            zoom: 1.0,
+
+            show_grid: true,
+            background_color1: Color::rgba(0.048, 0.00468, 0.0744, 1.0) ,
+            background_color2: Color::rgba(0.0244, 0.0023, 0.0372, 1.0) ,
+
+            canvas_size: size.clone(),
+            outer_border: Vec2::new(0.03 * size.y / size.x, 0.03),
+            zero_world: Vec2::new(0.0, 0.0),
+
+            hide_contour: false,
+            hide_tick_labels: false,
+            hide_half_ticks: true,
+            significant_digits: 2,
+            show_axes: true,
+            show_target: false,
+            target_toggle: false,
+            tick_label_color: Color::BLACK,
+            target_label_color: Color::GRAY,
+            target_color: Color::GRAY,
+            target_position: Vec2::new(0.0, 0.0),
+            target_significant_digits: 2,
+
+            canvas_position: Vec2::ZERO,
+
+            data: PlotData::default(),
+
+            bezier_num_points: 100,
+            bezier_dummy: 0.0,
+
+            do_spawn_plot: true,
+        };
+
+        plot.compute_zeros();
+        plot
+    }
+}
+
+
+
+impl Plot {
+    /// Customizable plotting function. Takes any type that implements [`Plotable`], namely 
+    ///  `Vec<Vec2>`, `Vec<(f64, f64)>`, `Vec<f32>`, ...
+    pub fn plotopt<T: Plotable>(&mut self, v: T, options: Vec<Opt>) {
+        //
+        let data_in_plot_format: PlotFormat = v.into_plot_format();
+
+        if !options.contains(&Opt::LineStyle(LineStyle::None)) {
+            let mut data = SegmentData {
+                data: data_in_plot_format.data.clone(),
+                ..Default::default() 
+            };
+
+            for option in options.iter() {
+                match option {
+                    Opt::Color(col) => { data.color = *col; },
+
+                    Opt::Size(si)=> {
+                        data.size = *si;
+                    },
+                    Opt::LineStyle(style)=> { data.line_style = style.clone(); },
+
+                    Opt::Mech(mech)=> { data.mech = *mech; },
+
+                    _ => {},
+
+                }
+            }
+                
+            self.data.segment_groups.push(data);
+
+        }
+
+        // Decide whether to draw markers using the options.
+        // If any of MarkerStyle or MarkerSize is specified, draw markers
+        let draw_markers = options.iter().map(|opt| {
+            if let &Opt::MarkerStyle(_) = opt  { true } 
+            else if let &Opt::MarkerSize(_) = opt  { true } 
+            else { false }
+        }).any(|x| x);
+
+        if draw_markers {
+            let mut data = MarkerData {
+                data: data_in_plot_format.data.clone(),
+                ..Default::default() 
+            };
+
+            for option in options.iter() {
+                match option {
+                    Opt::MarkerColor(col) => { data.color = *col; },
+
+                    Opt::MarkerSize(mut si)=> {
+                        si = si.clamp(0.2, 2.0);
+                        data.size = si;
+                    },
+                    Opt::MarkerStyle(style)=> { data.marker_style = style.clone(); },
+                    Opt::MarkerInnerPointColor(col) => { data.marker_point_color = col.clone();},
+                    Opt::Contour(cont)=> { data.draw_contour = *cont; },
+                    _ => {},
+
+                }
+            }
+            
+            self.data.marker_groups.push(data);
+        }
+    } 
+
+    /// Quickly plot data points using segments to connect consecutive points. Takes any type 
+    /// that implements [`Plotable`], namely `Vec<Vec2>`, `Vec<(f64, f64)>`, `Vec<f32>`, ...
+    pub fn plot(&mut self, v: impl Plotable) {
+        //
+        let pf: PlotFormat = v.into_plot_format();
+
+        let data = &pf.data;
+
+        let lo_x = data
+            .iter()
+            .min_by(|q, r| q.x.partial_cmp(&r.x).unwrap())
+            .unwrap().x;
+
+        let lo_y = data
+            .iter()
+            .min_by(|q, r| q.y.partial_cmp(&r.y).unwrap())
+            .unwrap().y;
+
+        let up_x = data
+            .iter()
+            .max_by(|q, r| q.x.partial_cmp(&r.x).unwrap())
+            .unwrap().x;
+        
+        let up_y = data
+            .iter()
+            .max_by(|q, r| q.y.partial_cmp(&r.y).unwrap())
+            .unwrap().y;
+
+        let dx = (up_x - lo_x).abs() * 0.1;
+        let dy = (up_y - lo_y).abs() * 0.1;
+        
+
+        self.set_bounds(Vec2::new(lo_x - dx, lo_y - dy) , Vec2::new(up_x +dx, up_y + dy));
+
+        let new_data = SegmentData {
+            data: pf.data,
+            ..Default::default()  
+        };
+        
+        self.data.segment_groups.push(new_data);
+
+        println!("Segment added");
+        
+    }
+
+    /// Quickly plot data points using markers (scatter plot). 
+    pub fn plotm<T: Plotable>(&mut self, v: T) {
+        //
+        let pf: PlotFormat = v.into_plot_format();
+
+        let data = pf.data;
+
+        let lo_x = data
+            .iter()
+            .min_by(|q, r| q.x.partial_cmp(&r.x).unwrap())
+            .unwrap().x;
+
+        let lo_y = data
+            .iter()
+            .min_by(|q, r| q.y.partial_cmp(&r.y).unwrap())
+            .unwrap().y;
+
+        let up_x = data
+            .iter()
+            .max_by(|q, r| q.x.partial_cmp(&r.x).unwrap())
+            .unwrap().x;
+        
+        let up_y = data
+            .iter()
+            .max_by(|q, r| q.y.partial_cmp(&r.y).unwrap())
+            .unwrap().y;
+
+        let dx = (up_x - lo_x).abs() * 0.1;
+        let dy = (up_y - lo_y).abs() * 0.1;
+
+        self.set_bounds(Vec2::new(lo_x - dx, lo_y - dy) , Vec2::new(up_x +dx, up_y + dy));
+
+        
+        let new_data = MarkerData {
+            data: data,
+            ..Default::default()                   
+        };
+
+        self.data.marker_groups.push(new_data);        
+    }
+
+    /// Quickly plot a function by providing said function. Defaults to a range on the both axes from `-0.2` to `1.2`.
+    pub fn plot_func(&mut self, f: fn(f32, f32) -> f32) {
+        //
+
+        let new_data = BezierData {
+            function: f,
+            ..Default::default()
+        };
+                
+        self.data.bezier_groups.push(new_data);
+    }
+
+    /// Plot a function by providing said function and options.
+    pub fn plotopt_func(&mut self, f: fn(f32, f32) -> f32, options: Vec<Opt>) {
+        //
+        let mut data = BezierData {
+            function: f,
+            ..Default::default()
+        };
+
+
+        for option in options.iter() {
+            match option {
+                Opt::Color(col) => { data.color = *col; },
+
+                Opt::Size(si)=> {
+                    data.size = *si;
+                },
+                Opt::LineStyle(style)=> { data.line_style = style.clone(); },
+
+                Opt::Mech(mech)=> { data.mech = *mech; },
+
+                Opt::Animate(animate) => { data.show_animation = *animate; }
+
+                Opt::MarkerStyle(_)=> { 
+                    eprintln!("MarkerStyle is not a valid option for segments"); 
+                },
+
+                Opt::MarkerInnerPointColor(_)=> {  
+                    eprintln!("MarkerInnerPointColor is not a valid option for segments"); 
+                },
+
+                Opt::Contour(_)=> { 
+                     println!("Contour is not a valid option for segments");
+                },
+                
+                Opt::NumPoints(_) => { 
+                    eprintln!("NumPoints is not a valid option for segments"); 
+                },
+
+                Opt::MarkerColor(_) => { 
+                    eprintln!("MarkerColor is not a valid option for segments"); 
+                },
+
+                Opt::MarkerSize(_) => { 
+                    eprintln!("MarkerSize is not a valid option for segments"); 
+                },
+
+                // _ => {},
+            }
+        }
+        self.data.bezier_groups.push(data);
+
+    }
+
+    
+    fn make_canvas(&self) -> CanvasParams {
+
+        let canvas = CanvasParams {
+            position: self.canvas_position,
+            previous_position: self.canvas_position,
+            original_size: self.canvas_size,
+            scale: Vec2::splat(1.0),
+            previous_scale: Vec2::splat(1.0),
+            hover_radius: 20.0,
+        };
+
+        canvas
+
+    }
+
+    pub(crate) fn delta_axes(&self) -> Vec2 {
+        self.bounds.up - self.bounds.lo
+    }
+
+    pub(crate) fn zoom_axes(&mut self, direction: f32) {
+        let percent_factor = 10.0;
+
+        let multiplier = 1.0 + direction * percent_factor / 100.0;
+
+        let mouse_pos = self.plot_coord_mouse_pos;
+
+        self.bounds.up =
+            self.plot_coord_mouse_pos + (self.bounds.up - mouse_pos) * multiplier;
+        self.bounds.lo =
+            self.plot_coord_mouse_pos - (mouse_pos - self.bounds.lo) * multiplier;
+
+        self.zoom *= multiplier;
+    }
+
+    pub(crate) fn move_axes(&mut self, mouse_delta: Vec2) {
+        let mut axes = self.delta_axes();
+        axes.x *= -1.0;
+        let size = self.canvas_size / (1. + self.outer_border);
+
+        self.bounds.up += mouse_delta * axes / size;
+        self.bounds.lo += mouse_delta * axes / size;
+    }
+
+    // TODO: make a smarter tick period adjuster
+    pub(crate) fn clamp_tick_period(&mut self) {
+        let max_num_ticks = 15.0;
+        let min_num_ticks = 0.000001;
+
+        self.tick_period.x = self.tick_period.x.clamp(
+            self.delta_axes().x / max_num_ticks,
+            self.delta_axes().x / min_num_ticks,
+        );
+
+        self.tick_period.y = self.tick_period.y.clamp(
+            self.delta_axes().y / max_num_ticks,
+            self.delta_axes().x / min_num_ticks,
+        );
+    }
+
+    /// Override the default plot bounds: x axis goes from bounds.lo.x to bounds.up.x. 
+    /// Beware! The tick period is automatically adjusted. Changing the tick period before setting the bounds will not have the intended effect.
+    /// The bounds must be set before the ticks.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `lo.x >= up.x` or `lo.y >= up.y`.
+    pub fn set_bounds(&mut self, lo: Vec2, up: Vec2) {
+
+        if lo.x >= up.x {
+            panic!("when using plot.set_bounds(), lo.x must be strictly less than up.x");
+        } else if lo.y >= up.y {
+            panic!("when using plot.set_bounds(), lo.y must be strictly less than up.y");
+        };
+
+        self.bounds = PlotCanvasBounds {
+            lo,
+            up,
+        };
+
+        let delta = up - lo;
+        let exact_tick = delta / 10.0;
+
+        // find order of magnitude of dx
+        let order_x = exact_tick.x.log10().floor();
+        let mag_x = 10_f32.powf(order_x);
+
+
+        let p1x = mag_x * 1.0;
+        let p2x = mag_x * 2.0;
+        let p5x = mag_x * 5.0;
+
+        let psx = [p1x, p2x, p5x];
+
+
+        let vx = vec! [(p1x-exact_tick.x).abs() , (p2x-exact_tick.x).abs(), (p5x-exact_tick.x).abs()];
+        
+        use std::cmp::Ordering;
+        let min_x_index = vx.iter()
+            .enumerate()
+            .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(Ordering::Equal))
+            .map(|(index, _)| index);
+
+        let tick_x = psx[min_x_index.unwrap()]; 
+
+
+        let order_y = exact_tick.y.log10().floor();
+        let mag_y = 10_f32.powf(order_y);
+
+
+        let p1y = mag_y * 1.0;
+        let p2y = mag_y * 2.0;
+        let p5y = mag_y * 5.0;
+
+        let psy = [p1y, p2y, p5y];
+
+
+        let vy = vec! [(p1y-exact_tick.y).abs() , (p2y-exact_tick.y).abs(), (p5y-exact_tick.y).abs()];
+        
+        let min_y_index = vy.iter()
+            .enumerate()
+            .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(Ordering::Equal))
+            .map(|(index, _)| index);
+
+        let tick_y = psy[min_y_index.unwrap()]; 
+
+
+  
+
+        self.tick_period = Vec2::new(tick_x, tick_y);
+
+        self.compute_zeros();
+    }
+
+
+    pub(crate) fn compute_zeros(&mut self) {
+        let lo_world = -self.canvas_size / 2.0 / (1.0 + self.outer_border);
+
+        let v = Vec2::new(
+            self.bounds.lo.x * self.canvas_size.x
+                / (1.0 + self.outer_border.x)
+                / (self.bounds.up.x - self.bounds.lo.x),
+            self.bounds.lo.y * self.canvas_size.y
+                / (1.0 + self.outer_border.y)
+                / (self.bounds.up.y - self.bounds.lo.y),
+        );
+
+        self.zero_world = lo_world - v ;
+    }
+
+    pub(crate) fn compute_bounds_world(&self) -> PlotCanvasBounds {
+
+        let lo = self.to_local(self.bounds.lo);
+        let up = self.to_local(self.bounds.up);
+
+        PlotCanvasBounds { up, lo }
+    }
+
+    /// Convert a point in plot coordinates to a point in world coordinates modulo the canvas position
+    pub fn to_local(&self, v: Vec2) -> Vec2 {
+
+                self.zero_world
+                    + v * self.canvas_size
+                        / (self.bounds.up - self.bounds.lo)
+                        / (1.0 + self.outer_border.x)
+
+
+    }
+
+    /// Convert a point in world coordinates to a point in the graph coordinates.
+    pub fn world_to_plot(&self, y: Vec2) -> Vec2 {
+        (y - self.zero_world - self.canvas_position) * (self.bounds.up - self.bounds.lo)
+            / self.canvas_size
+            * (1.0 + self.outer_border) 
+    }
+}
+
+
+
+
+
+
+
+
+// in canvas folder
+File: mod.rs
+
+pub mod canvas_actions;
+#[allow(unused_imports)]
+pub use canvas_actions::*;
+
+use bevy::{
+    ecs::system::{lifetimeless::SRes, SystemParamItem},
+    prelude::*,
+    reflect::TypeUuid,
+    render::{
+        extract_resource::ExtractResource,
+        render_asset::{PrepareAssetError, RenderAsset},
+        render_resource::*,
+        renderer::RenderDevice,
+    },
+    sprite::{Material2d, Material2dPipeline, Material2dPlugin},
+};
+
+
+use crate::plot::*;
+use crate::util::*;
+
+#[derive(Component)]
+pub(crate) struct PlotLabel;
+
+#[derive(Component)]
+pub(crate) struct TargetLabel;
+
+pub(crate) struct SpawnGraphEvent {
+    pub plot_handle: Handle<Plot>,
+    pub canvas: CanvasParams,
+}
+
+pub(crate) enum Corner {
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
+}
+
+// TODO: unimplemented
+#[derive(Component)]
+pub(crate) struct ResizePlotWindow {
+    pub corner: Corner,
+    #[allow(dead_code)]
+    pub previous_position: Vec2,
+    pub previous_scale: Vec2,
+}
+
+#[derive(Component, Clone)]
+pub(crate) struct CanvasParams {
+    pub position: Vec2,
+    #[allow(dead_code)]
+    pub previous_position: Vec2,
+    pub original_size: Vec2,
+    pub scale: Vec2,
+    pub previous_scale: Vec2,
+    pub hover_radius: f32,
+}
+
+impl CanvasParams {
+    pub(crate) fn within_rect(&self, position: Vec2) -> bool {
+        let size = self.original_size * self.scale;
+        if position.x < self.position.x + size.x / 2.0
+            && position.x > self.position.x - size.x / 2.0
+            && position.y < self.position.y + size.y / 2.0
+            && position.y > self.position.y - size.y / 2.0
+        {
+            return true;
+        }
+        return false;
+    }
+
+    pub(crate) fn clicked_on_plot_corner(
+        &self,
+        position: Vec2,
+        commands: &mut Commands,
+        entity: Entity,
+    ) {
+        let size = self.original_size * self.scale;
+        let top_right = self.position + Vec2::new(size.x / 2.0, size.y / 2.0);
+        let bottom_left = self.position + Vec2::new(-size.x / 2.0, -size.y / 2.0);
+        let top_left = self.position + Vec2::new(-size.x / 2.0, size.y / 2.0);
+        let bottom_right = self.position + Vec2::new(size.x / 2.0, -size.y / 2.0);
+
+        // println!("{:?}", position);
+        // println!("top_left: {:?}", top_left);
+
+        if (top_right - position).length() < self.hover_radius {
+            commands.entity(entity).insert(ResizePlotWindow {
+                corner: Corner::TopRight,
+                // previous_size: size,
+                previous_position: self.position,
+                previous_scale: self.scale,
+            });
+        }
+
+        if (bottom_left - position).length() < self.hover_radius {
+            commands.entity(entity).insert(ResizePlotWindow {
+                corner: Corner::BottomLeft,
+                // previous_size: size,
+                previous_position: self.position,
+                previous_scale: self.scale,
+            });
+        }
+
+        if (top_left - position).length() < self.hover_radius {
+            commands.entity(entity).insert(ResizePlotWindow {
+                corner: Corner::TopLeft,
+                // previous_size: self.size,
+                previous_position: self.position,
+                previous_scale: self.scale,
+            });
+            println!("top left");
+        }
+
+        if (bottom_right - position).length() < self.hover_radius {
+            commands.entity(entity).insert(ResizePlotWindow {
+                corner: Corner::BottomRight,
+                // previous_size: self.size,
+                previous_position: self.position,
+                previous_scale: self.scale,
+            });
+        }
+    }
+
+    pub(crate) fn hovered_on_plot_edges(&self, position: Vec2, windows: &mut ResMut<Windows>) {
+        let size = self.original_size * self.scale;
+
+        let top_right = self.position + Vec2::new(size.x / 2.0, size.y / 2.0);
+        let bottom_left = self.position + Vec2::new(-size.x / 2.0, -size.y / 2.0);
+        let top_left = self.position + Vec2::new(-size.x / 2.0, size.y / 2.0);
+        let bottom_right = self.position + Vec2::new(size.x / 2.0, -size.y / 2.0);
+
+        let mut set_to_default_cursor = true;
+        let window = windows.get_primary_mut().unwrap();
+
+        if (top_left - position).length() < self.hover_radius {
+            window.set_cursor_icon(CursorIcon::NwResize);
+            set_to_default_cursor = false;
+        }
+
+        if (top_right - position).length() < self.hover_radius {
+            window.set_cursor_icon(CursorIcon::NeResize);
+            set_to_default_cursor = false;
+        }
+
+        if (bottom_left - position).length() < self.hover_radius {
+            window.set_cursor_icon(CursorIcon::SwResize);
+            set_to_default_cursor = false;
+        }
+
+        if (bottom_right - position).length() < self.hover_radius {
+            window.set_cursor_icon(CursorIcon::SeResize);
+            set_to_default_cursor = false;
+        }
+
+        if set_to_default_cursor {
+            window.set_cursor_icon(CursorIcon::Default);
+        }
+    }
+}
+
+#[derive(Component)]
+pub(crate) struct MoveAxes;
+
+#[derive(Component)]
+pub(crate) struct ZoomAxes {
+    pub wheel_dir: f32,
+    #[allow(dead_code)]
+    pub mouse_pos: Vec2,
+}
+
+pub(crate) struct UpdatePlotLabelsEvent {
+    pub plot_handle: Handle<Plot>,
+    pub canvas_entity: Entity,
+}
+
+pub(crate) struct UpdateTargetLabelEvent {
+    pub plot_handle: Handle<Plot>,
+    pub canvas_entity: Entity,
+    pub canvas_material_handle: Handle<CanvasMaterial>,
+}
+
+
+#[derive(TypeUuid, Debug, Clone, Component, ExtractResource, AsBindGroup)]
+#[uuid = "25d265ac-af6b-40cd-be74-5581194025e8"]
+pub(crate) struct CanvasMaterial {
+    /// Mouse position in the reference frame of the graph, corresponding to its axes coordinates
+    #[uniform(0)]
+    pub mouse_pos: Vec2,
+    #[uniform(0)]
+    pub tick_period: Vec2,
+
+    /// Extreme points of the canvas
+    #[uniform(0)]
+    // pub bounds: PlotCanvasBounds,
+    pub bound_up: Vec2,
+    #[uniform(0)]
+    pub bound_lo: Vec2,
+
+    #[uniform(0)]
+    pub time: f32,
+    #[uniform(0)]
+    pub zoom: f32,
+    #[uniform(0)]
+    pub size: Vec2,
+    #[uniform(0)]
+    pub outer_border: Vec2,
+    #[uniform(0)]
+    pub position: Vec2,
+    #[uniform(0)]
+    pub show_target: f32,
+    #[uniform(0)]
+    pub hide_contour: f32,
+    #[uniform(0)]
+    pub target_pos: Vec2,
+
+    #[uniform(0)]
+    pub background_color1: Vec4,
+    #[uniform(0)]
+    pub background_color2: Vec4,
+    #[uniform(0)]
+    pub target_color: Vec4,
+
+    #[uniform(0)]
+    pub show_grid: f32,
+    #[uniform(0)]
+    pub show_axes: f32,
+}
+
+
+impl CanvasMaterial {
+    pub fn new(plot: &Plot) -> Self {
+        CanvasMaterial {
+            mouse_pos: Vec2::ZERO,
+            tick_period: plot.tick_period,
+            // bounds: plot.bounds.clone(),
+            bound_up: plot.bounds.up,
+            bound_lo: plot.bounds.lo,
+            time: 0.0,
+            zoom: 1.0,
+            size: plot.canvas_size,
+            outer_border: plot.outer_border,
+            position: plot.canvas_position,
+            show_target: if plot.show_target && plot.target_toggle {
+                1.0
+            } else {
+                0.0
+            },
+            hide_contour: if plot.hide_contour { 1.0 } else { 0.0 },
+            target_pos: Vec2::ZERO,
+            background_color1: col_to_vec4(plot.background_color1),
+            background_color2: col_to_vec4(plot.background_color2),
+            target_color: col_to_vec4(plot.target_color),
+            show_grid: if plot.show_grid { 1.0 } else { 0.0 },
+            show_axes: if plot.show_axes { 1.0 } else { 0.0 },
+        }
+    }
+
+    /// Updates all the shader parameters except the mouse_pos, which is updated every frame anyway.
+    pub fn update_all(&mut self, plot: &Plot) {
+        // mouse_pos is supposed to be in World coordinates // self.mouse_pos = plot.plot_coord_mouse_pos;
+
+        self.position = plot.canvas_position;
+        self.tick_period = plot.tick_period;
+
+        self.bound_up = plot.bounds.up;
+        self.bound_lo = plot.bounds.lo;
+        self.zoom = plot.zoom;
+        self.time = plot.time;
+        self.size = plot.canvas_size;
+        self.outer_border = plot.outer_border;
+        self.show_target = if plot.show_target && plot.target_toggle {
+            1.0
+        } else {
+            0.0
+        };
+        self.target_pos = plot.to_local(plot.target_position) + plot.canvas_position;
+
+        self.background_color1 = col_to_vec4(plot.background_color1);
+        self.background_color2 = col_to_vec4(plot.background_color2);
+        self.target_color = col_to_vec4(plot.target_color);
+        self.show_grid = if plot.show_grid { 1.0 } else { 0.0 };
+        self.show_axes = if plot.show_axes { 1.0 } else { 0.0 };
+    }
+
+    /// Checks whether position is inside the plot bounderies or not.
+    pub fn within_rect(&self, position: Vec2) -> bool {
+        let size = self.size;
+        if position.x < self.position.x + size.x / 2.0
+            && position.x > self.position.x - size.x / 2.0
+            && position.y < self.position.y + size.y / 2.0
+            && position.y > self.position.y - size.y / 2.0
+        {
+            return true;
+        }
+        return false;
+    }
+}
+
+pub(crate) struct CanvasMesh2dPlugin;
+
+pub const CANVAS_SHADER_HANDLE: HandleUntyped =
+    HandleUntyped::weak_from_u64(Shader::TYPE_UUID, 11248119131354745027);
+
+impl Plugin for CanvasMesh2dPlugin {
+    fn build(&self, app: &mut App) {
+        // let mut shaders = world.get_resource_mut::<Assets<Shader>>().unwrap();
+        let mut shaders = app.world.get_resource_mut::<Assets<Shader>>().unwrap();
+
+        let handle_untyped = CANVAS_SHADER_HANDLE.clone();
+
+        println!("CANADFADSFASDFSDF");
+
+        shaders.set_untracked(
+            handle_untyped.clone(),
+            Shader::from_wgsl(include_str!("canvas.wgsl")),
+        );
+
+        app.add_plugin(Material2dPlugin::<CanvasMaterial>::default());
+
+        // // at the moment, there seems to be no way to include a font in the crate
+        // let mut fonts = app.world.get_resource_mut::<Assets<Font>>().unwrap();
+    }
+}
+
+impl bevy::sprite::Material2d for CanvasMaterial {
+    fn fragment_shader() -> ShaderRef {
+        let handle_untyped = CANVAS_SHADER_HANDLE.clone();
+        let shader_handle: Handle<Shader> = handle_untyped.typed::<Shader>();
+        shader_handle.into()
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+// in canvas folder
+File: canvas_actions.rs
+
+use bevy::{
+    input::mouse::{MouseMotion, MouseWheel},
+    prelude::*,
+    sprite::{MaterialMesh2dBundle, Mesh2dHandle},
+};
+
+use crate::canvas::*;
+use crate::inputs::*;
+
+use crate::canvas::RespawnAllEvent;
+use crate::util::*;
+
+use crate::bezier::*;
+use crate::plot::*;
+
+fn spawn_axis_tick_labels(
+    commands: &mut Commands,
+    plot_entity: Entity,
+    text: &str,
+    font_size: f32,
+    position: Vec3,
+    v_align: VerticalAlign,
+    h_align: HorizontalAlign,
+    font_color: Color,
+    font: &Handle<Font>,
+) {
+
+    let text_style = TextStyle {
+        font: font.clone(),
+        font_size,
+        color: font_color,
+    };
+    let text_alignment = TextAlignment {
+        vertical: v_align,
+        horizontal: h_align,
+    };
+
+    let label_entity = commands
+        .spawn_bundle(Text2dBundle {
+            text: Text::from_section(text, text_style.clone()).with_alignment(text_alignment),
+            transform: Transform::from_translation(position),
+            ..Default::default()
+        })
+        .insert(PlotLabel)
+        .id();
+
+    commands.entity(plot_entity).push_children(&[label_entity]);
+}
+
+pub(crate) fn update_target(
+    mut commands: Commands,
+    // asset_server: Res<AssetServer>,
+    maybe_font: Res<TickLabelFont>,
+    // mut materials: ResMut<Assets<CanvasMaterial>>,
+    mut plots: ResMut<Assets<Plot>>,
+    mut update_target_labels_event: EventReader<UpdateTargetLabelEvent>,
+    taget_label_query: Query<Entity, With<TargetLabel>>,
+    // canvas_query: Query<(Entity, &mut Handle<CanvasMaterial>, &Handle<Plot>)>,
+    mut canvas_materials: ResMut<Assets<CanvasMaterial>>,
+    // mut canvas_query: Query<&mut Canvas>,
+) {
+    if let Some(event) = update_target_labels_event.iter().next() {
+        for entity in taget_label_query.iter() {
+            commands.entity(entity).despawn();
+        }
+        // let graph_sprite = canvas_query.get_mut(event.canvas_entity).unwrap();
+
+        // let size = graph_sprite.original_size;
+
+        let plot_handle = event.plot_handle.clone();
+        let plot_entity = event.canvas_entity;
+        // if let Some(plot) = materials.get_mut(plot_handle.clone()) {
+        if let Some(plot) = plots.get_mut(&plot_handle.clone()) {
+            //
+            // update canvas shader
+            if let Some(canvas_mat) = canvas_materials.get_mut(&event.canvas_material_handle) {
+                canvas_mat.update_all(&plot);
+            }
+
+            if plot.show_target && plot.target_toggle {
+                let target_text_z_plane = 1.2;
+                let font_size = 16.0;
+
+                let pos = plot.target_position;
+
+                let target_str_x =
+                    format_numeric_label(&plot, pos.x, pos.x > 1000.0 || pos.x < 0.01);
+                let target_str_y =
+                    format_numeric_label(&plot, pos.y, pos.y > 1000.0 || pos.y < 0.01);
+
+                let target_str = format!("({}, {})", target_str_x, target_str_y);
+
+                let offset = font_size * 0.2;
+                let mut target_position = plot
+                    .to_local(plot.target_position)
+                    .extend(target_text_z_plane)
+                    + Vec3::new(offset, offset, 0.0);
+
+                // let font = asset_server.load("fonts/Roboto-Regular.ttf");
+
+                let mut text_alignment = TextAlignment {
+                    vertical: VerticalAlign::Bottom,
+                    horizontal: HorizontalAlign::Left,
+                };
+
+                let upper_limits = plot.canvas_position + plot.canvas_size / 2.0;
+                let lower_limits = plot.canvas_position - plot.canvas_size / 2.0;
+
+                if target_position.x > upper_limits.x - font_size * 1.0 {
+                    text_alignment.horizontal = HorizontalAlign::Right;
+                    target_position.x -= font_size * 0.4;
+                }
+
+                if let Some(font_handle) = maybe_font.maybe_font.as_ref() {
+                    let text_style = TextStyle {
+                        font: font_handle.clone(),
+                        font_size,
+                        color: plot.target_label_color,
+                    };
+                    if !(target_position.y > upper_limits.y - font_size * 1.2
+                        || target_position.y < lower_limits.y + font_size * 0.2)
+                    {
+                        let label_entity = commands
+                            .spawn_bundle(Text2dBundle {
+                                text: Text::from_section(target_str, text_style.clone())
+                                    .with_alignment(text_alignment),
+                                transform: Transform::from_translation(target_position),
+                                ..Default::default()
+                            })
+                            .insert(TargetLabel)
+                            .id();
+
+                        commands.entity(plot_entity).push_children(&[label_entity]);
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub(crate) fn update_plot_labels(
+    mut commands: Commands,
+    // asset_server: Res<AssetServer>,
+    maybe_font: Res<TickLabelFont>,
+    // mut materials: ResMut<Assets<CanvasMaterial>>,
+    mut plots: ResMut<Assets<Plot>>,
+    mut update_plot_labels_event: EventReader<UpdatePlotLabelsEvent>,
+    plot_label_query: Query<Entity, With<PlotLabel>>,
+    mut canvas_query: Query<&mut CanvasParams>,
+) {
+    // If there is a stack of UpdatePlotLabelsEvent, only read the first one.
+    if let Some(font_handle) = maybe_font.maybe_font.as_ref() {
+        if let Some(event) = update_plot_labels_event.iter().next() {
+            let plot_handle = event.plot_handle.clone();
+
+            // if let Some(plot) = materials.get_mut(plot_handle.clone()) {
+
+            if let Some(plot) = plots.get_mut(&plot_handle.clone()) {
+                if !plot.hide_tick_labels {
+                    for entity in plot_label_query.iter() {
+                        commands.entity(entity).despawn();
+                    }
+                    let plot_entity = event.canvas_entity;
+
+                    let graph_sprite = canvas_query.get_mut(event.canvas_entity).unwrap();
+
+                    let size = graph_sprite.original_size;
+
+                    let font_size = 16.0;
+
+                    // TODO: clean this up using to_local inside the Plot struct
+                    let graph_y = size.y / (1. + plot.outer_border.y);
+                    let graph_x = size.x / (1. + plot.outer_border.x);
+
+                    let x_edge = size.x / (1. + plot.outer_border.x) / 2.0;
+                    let y_edge = size.y / (1. + plot.outer_border.y) / 2.0;
+
+                    let x_range = plot.bounds.up.x - plot.bounds.lo.x;
+                    let y_range = plot.bounds.up.y - plot.bounds.lo.y;
+
+                    let text_z_plane = 1.0001;
+
+                    ///////////////////////////// x_axis labels  /////////////////////////////
+                    {
+                        // distance from center for
+                        let center_dist_y = -graph_y / 2.0 + font_size * 1.0;
+
+                        // iterate
+                        let iter_x = x_edge * 2.0 / x_range;
+
+                        // integer corresponding to lowest x tick
+                        let bottom_x = (plot.bounds.lo.x / plot.tick_period.x).abs().floor() as i64
+                            * (plot.bounds.lo.x).signum() as i64;
+
+                        // integer corresponding to highest x tick
+                        let top_x = (plot.bounds.up.x / plot.tick_period.x).abs().floor() as i64
+                            * (plot.bounds.up.x).signum() as i64;
+
+                        let max_abs_x = (plot.tick_period.x * bottom_x as f32)
+                            .abs()
+                            .max(plot.tick_period.x * top_x as f32);
+
+                        for i in bottom_x..(top_x + 1) {
+                            if plot.hide_half_ticks && (i % 2).abs() == 1 {
+                                continue;
+                            }
+
+
+                            let x_str = format_numeric_label(
+                                &plot,
+                                i as f32 * plot.tick_period.x,
+                                max_abs_x >= 1000.0 || max_abs_x < 0.01,
+                            );
+
+                            // leftmost position on the x axis
+                            let x0 = x_edge * (-1.0 - plot.bounds.lo.x * 2.0 / x_range);
+
+                            // iterator for each label
+                            let x_pos = iter_x * i as f32 * plot.tick_period.x;
+
+                            let font_offset_x = -font_size * 0.2;
+                            // if the tick label is too far to the left, do not spawn it
+                            if (x0 + x_pos + font_offset_x + graph_x / 2.0) > font_size * 3.0
+                        // if the tick label is too right to the left, do not spawn it
+                        && (x0 + x_pos + font_offset_x - graph_x / 2.0) < -font_size * 0.0
+                            {
+                                spawn_axis_tick_labels(
+                                    &mut commands,
+                                    // &asset_server,
+                                    plot_entity,
+                                    &x_str,
+                                    font_size,
+                                    Vec2::new(x0 + x_pos + font_offset_x, center_dist_y)
+                                        .extend(text_z_plane),
+                                    VerticalAlign::Top,
+                                    HorizontalAlign::Right,
+                                    plot.tick_label_color,
+                                    &font_handle,
+                                );
+                            }
+                        }
+                    }
+
+                    ////////////////////////////////// y_axis labels //////////////////////////////////
+                    {
+                        // distance from center for
+                        let center_dist_x = -graph_x / 2.0 + font_size * 0.2;
+
+                        // iterate
+                        let iter_y = y_edge * 2.0 / y_range;
+
+                        // integer corresponding to lowest y tick
+                        let bottom_y = (plot.bounds.lo.y / plot.tick_period.y).abs().floor() as i64
+                            * (plot.bounds.lo.y).signum() as i64;
+
+                        // integer corresponding to highest y tick
+                        let top_y = (plot.bounds.up.y / plot.tick_period.y).abs().floor() as i64
+                            * (plot.bounds.up.y).signum() as i64;
+
+                        let max_abs_y = (plot.tick_period.y * bottom_y as f32)
+                            .abs()
+                            .max(plot.tick_period.y * top_y as f32);
+
+                        for i in bottom_y..top_y + 1 {
+                            if plot.hide_half_ticks && (i % 2).abs() == 1 {
+                                continue;
+                            }
+
+
+
+                            let y_str = format_numeric_label(
+                                &plot,
+                                i as f32 * plot.tick_period.y,
+                                // scientific notation if the numbers are larger than 1000 or smaller than 0.01
+                                max_abs_y >= 1000.0 || max_abs_y < 0.01,
+                            );
+
+                            // leftmost position on the x axis
+                            let y0 = y_edge * (-1.0 - plot.bounds.lo.y * 2.0 / y_range);
+
+                            // iterator for each label
+                            let y_pos = iter_y * i as f32 * plot.tick_period.y;
+
+                            let font_offset_y = -font_size * 0.1;
+
+                            if (y0 + y_pos + font_offset_y + graph_y / 2.0) > font_size * 1.2
+                                && (y0 + y_pos + font_offset_y - graph_y / 2.0) < -font_size * 0.0
+                            {
+                                spawn_axis_tick_labels(
+                                    &mut commands,
+                                    // &asset_server,
+                                    plot_entity,
+                                    &y_str,
+                                    font_size,
+                                    Vec2::new(center_dist_x, y0 + y_pos + font_offset_y)
+                                        .extend(0.0001),
+                                    VerticalAlign::Top,
+                                    HorizontalAlign::Left,
+                                    plot.tick_label_color,
+                                    font_handle,
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// delays the update of the plot labels until the next frame, after which the
+// plot canvas is definitely spawned
+pub(crate) fn wait_for_graph_spawn(
+    mut wait_for_update_labels_event: EventReader<WaitForUpdatePlotLabelsEvent>,
+    mut update_labels_event: EventWriter<UpdatePlotLabelsEvent>,
+) {
+    for event in wait_for_update_labels_event.iter() {
+        update_labels_event.send(UpdatePlotLabelsEvent {
+            plot_handle: event.plot_handle.clone(),
+            canvas_entity: event.quad_entity,
+        });
+    }
+}
+
+// spawns a graph a shader_param_handle
+pub(crate) fn spawn_graph(
+    mut commands: Commands,
+    mut spawn_graph_event: EventReader<SpawnGraphEvent>,
+    mut materials: ResMut<Assets<CanvasMaterial>>,
+    plots: ResMut<Assets<Plot>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut spawn_beziercurve_event: EventWriter<SpawnBezierCurveEvent>,
+    mut wait_for_update_labels_event: EventWriter<WaitForUpdatePlotLabelsEvent>,
+    mut change_canvas_material_event: EventWriter<RespawnAllEvent>,
+) {
+    for event in spawn_graph_event.iter() {
+        let plot_handle = event.plot_handle.clone();
+        let plot = plots.get(&plot_handle.clone()).unwrap();
+
+        let material = CanvasMaterial::new(&plot);
+
+        let canvas_material_handle = materials.add(material);
+
+        // quad
+        let plot_entity = commands
+            .spawn()
+            .insert_bundle(MaterialMesh2dBundle {
+                mesh: Mesh2dHandle(meshes.add(Mesh::from(shape::Quad::new(plot.canvas_size)))),
+                material: canvas_material_handle.clone(),
+                transform: Transform::from_translation(plot.canvas_position.extend(0.0001)),
+                ..Default::default()
+            })
+            .insert(event.canvas.clone())
+            .insert(event.plot_handle.clone())
+            .id();
+
+        wait_for_update_labels_event.send(WaitForUpdatePlotLabelsEvent {
+            quad_entity: plot_entity.clone(),
+            plot_handle: plot_handle.clone(),
+        });
+
+        change_canvas_material_event.send(RespawnAllEvent {
+            // canvas_material_handle: canvas_material_handle.clone(),
+            plot_handle: plot_handle.clone(),
+        });
+
+        // spawn each analytical curve
+        plot.data
+            .bezier_groups
+            .iter()
+            .enumerate()
+            .for_each(|(k, _)| {
+                spawn_beziercurve_event.send(SpawnBezierCurveEvent {
+                    group_number: k,
+                    plot_handle: plot_handle.clone(),
+                })
+            });
+    }
+}
+fn format_numeric_label(plot: &Plot, label: f32, scientific_notation: bool) -> String {
+    // scientific notation if the numbers are larger than 1000
+    // if max_abs_y >= 1000.0 || max_abs_y < 0.01 {
+    if scientific_notation {
+        let mut formatted = format!("{:+.1$e}", label, plot.significant_digits);
+        if let Some(rest) = formatted.strip_prefix("+") {
+            formatted = rest.to_string();
+        }
+        return formatted;
+    } else {
+        format!("{:.1$}", label, plot.significant_digits)
+    }
+}
+
+pub(crate) fn update_mouse_target(
+    mut my_canvas_mats: ResMut<Assets<CanvasMaterial>>,
+    mut my_plots: ResMut<Assets<Plot>>,
+    canvas_query: Query<(Entity, &mut Handle<CanvasMaterial>, &Handle<Plot>)>,
+    mut update_target_labels_event: EventWriter<UpdateTargetLabelEvent>,
+
+    cursor: Res<Cursor>,
+    mouse_button_input: Res<Input<MouseButton>>,
+) {
+    if mouse_button_input.pressed(MouseButton::Middle) {
+        for (canvas_entity, canvas_material_handle, plot_handle) in canvas_query.iter() {
+            // println!("{:?}", "CHANGING SHADER");
+            // if let Some(plot) = my_canvas_mat.get_mut(plot_handle) {
+            if let Some(plot) = my_plots.get_mut(plot_handle) {
+                if let Some(canvas_material) = my_canvas_mats.get_mut(canvas_material_handle) {
+                    plot.compute_zeros();
+
+                    //
+                    if mouse_button_input.just_pressed(MouseButton::Middle) {
+                        plot.target_toggle = !plot.target_toggle;
+                    }
+
+                    if canvas_material.within_rect(cursor.position) {
+                        //
+                        plot.target_position = plot.world_to_plot(cursor.position);
+                        canvas_material.mouse_pos =
+                            plot.to_local(plot.target_position) + plot.canvas_position;
+
+                        update_target_labels_event.send(UpdateTargetLabelEvent {
+                            plot_handle: plot_handle.clone(),
+                            canvas_entity,
+                            canvas_material_handle: canvas_material_handle.clone(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub(crate) fn change_plot(
+    mut commands: Commands,
+    mut my_plots: ResMut<Assets<Plot>>,
+    canvas_query: Query<(
+        Entity,
+        &CanvasParams,
+        &Handle<Plot>,
+        &mut Handle<CanvasMaterial>,
+    )>,
+
+    keyboard_input: Res<Input<KeyCode>>,
+    cursor: Res<Cursor>,
+    mut mouse_motion_events: EventReader<MouseMotion>,
+    mut mouse_wheel_events: EventReader<MouseWheel>,
+    mouse_button_input: Res<Input<MouseButton>>,
+
+    mut release_all_event: EventWriter<ReleaseAllEvent>,
+    mut update_plot_labels_event: EventWriter<UpdatePlotLabelsEvent>,
+    mut update_target_labels_event: EventWriter<UpdateTargetLabelEvent>,
+    mut windows: ResMut<Windows>,
+) {
+    for (canvas_entity, graph_sprite, plot_handle, canvas_material_handle) in canvas_query.iter() {
+        //
+        if let Some(plot) = my_plots.get_mut(plot_handle) {
+            plot.plot_coord_mouse_pos = plot.world_to_plot(cursor.position);
+
+            graph_sprite.hovered_on_plot_edges(cursor.position, &mut windows);
+
+            for event in mouse_motion_events.iter() {
+
+                if keyboard_input.pressed(KeyCode::P) {
+                    plot.tick_period.x *= 1.0 + (event.delta.x) / 1000.0;
+                    plot.tick_period.y *= 1.0 + (event.delta.y) / 1000.0;
+
+                    plot.clamp_tick_period();
+
+                    update_plot_labels_event.send(UpdatePlotLabelsEvent {
+                        plot_handle: plot_handle.clone(),
+                        canvas_entity,
+                    });
+                    update_target_labels_event.send(UpdateTargetLabelEvent {
+                        plot_handle: plot_handle.clone(),
+                        canvas_entity,
+                        canvas_material_handle: canvas_material_handle.clone(),
+                    });
+                }
+            }
+
+            for wheel_event in mouse_wheel_events.iter() {
+                commands.entity(canvas_entity).insert(ZoomAxes {
+                    wheel_dir: wheel_event.y,
+                    mouse_pos: cursor.position,
+                });
+
+                update_plot_labels_event.send(UpdatePlotLabelsEvent {
+                    plot_handle: plot_handle.clone(),
+                    canvas_entity,
+                });
+
+                update_target_labels_event.send(UpdateTargetLabelEvent {
+                    plot_handle: plot_handle.clone(),
+                    canvas_entity,
+                    canvas_material_handle: canvas_material_handle.clone(),
+                });
+            }
+
+            if mouse_button_input.just_pressed(MouseButton::Left) {
+                //
+                if graph_sprite.within_rect(cursor.position) {
+                    commands.entity(canvas_entity).insert(MoveAxes);
+                }
+
+                graph_sprite.clicked_on_plot_corner(cursor.position, &mut commands, canvas_entity);
+            }
+        }
+    }
+
+    if mouse_button_input.just_released(MouseButton::Left) {
+        release_all_event.send(ReleaseAllEvent);
+    }
+}
+
+pub(crate) fn release_all(
+    mut commands: Commands,
+    mut query2: Query<(Entity, &mut CanvasParams), With<ResizePlotWindow>>,
+    query3: Query<Entity, With<MoveAxes>>,
+    mut release_all_event: EventReader<ReleaseAllEvent>,
+    mut windows: ResMut<Windows>,
+) {
+    for _ in release_all_event.iter() {
+        for (entity, mut graph_sprite) in query2.iter_mut() {
+            commands.entity(entity).remove::<ResizePlotWindow>();
+            graph_sprite.previous_scale = graph_sprite.scale;
+        }
+        for entity in query3.iter() {
+            commands.entity(entity).remove::<MoveAxes>();
+        }
+        let window = windows.get_primary_mut().unwrap();
+        window.set_cursor_icon(CursorIcon::Default);
+    }
+}
+
+pub(crate) fn adjust_graph_size(
+    mut canvas_query: Query<
+        (
+            Entity,
+            &mut CanvasParams,
+            &Handle<Plot>,
+            &Handle<CanvasMaterial>,
+            &ResizePlotWindow,
+            &mut Transform,
+        ),
+        Without<Locked>,
+    >,
+    mut my_canvas_mat: ResMut<Assets<CanvasMaterial>>,
+    mut plots: ResMut<Assets<Plot>>,
+    cursor: Res<Cursor>,
+    mut update_labels_event: EventWriter<UpdatePlotLabelsEvent>,
+) {
+    for (canvas_entity, mut graph_sprite, plot_handle, mat_handle, resize_corner, mut transform) in
+        canvas_query.iter_mut()
+    {
+        //
+
+        if let Some(canvas_material) = my_canvas_mat.get_mut(mat_handle) {
+            let delta = cursor.pos_relative_to_click;
+            let mut new_transform_scale;
+
+            match resize_corner.corner {
+                Corner::TopLeft => {
+                    new_transform_scale = Vec3::new(
+                        resize_corner.previous_scale.x - delta.x / 350.0,
+                        resize_corner.previous_scale.y + delta.y / 350.0,
+                        1.0,
+                    );
+                }
+                Corner::TopRight => {
+                    let delta = cursor.pos_relative_to_click;
+
+                    new_transform_scale = Vec3::new(
+                        resize_corner.previous_scale.x + delta.x / 350.0,
+                        resize_corner.previous_scale.y + delta.y / 350.0,
+                        1.0,
+                    );
+                }
+
+                Corner::BottomRight => {
+                    let delta = cursor.pos_relative_to_click;
+
+                    new_transform_scale = Vec3::new(
+                        resize_corner.previous_scale.x + delta.x / 350.0,
+                        resize_corner.previous_scale.y - delta.y / 350.0,
+                        1.0,
+                    );
+                }
+                Corner::BottomLeft => {
+                    let delta = cursor.pos_relative_to_click;
+
+                    new_transform_scale = Vec3::new(
+                        resize_corner.previous_scale.x - delta.x / 350.0,
+                        resize_corner.previous_scale.y - delta.y / 350.0,
+                        1.0,
+                    );
+                }
+            }
+
+            new_transform_scale.x = new_transform_scale.x.clamp(0.1, 10.0);
+            new_transform_scale.y = new_transform_scale.y.clamp(0.1, 10.0);
+
+            transform.scale = new_transform_scale;
+
+            graph_sprite.scale = transform.scale.truncate();
+
+            canvas_material.size = graph_sprite.scale * graph_sprite.original_size;
+
+            update_labels_event.send(UpdatePlotLabelsEvent {
+                plot_handle: plot_handle.clone(),
+                canvas_entity,
+            });
+
+            if let Some(plot) = plots.get_mut(plot_handle) {
+                plot.canvas_size = canvas_material.size;
+            }
+        }
+    }
+}
+
+pub(crate) fn adjust_graph_axes(
+    mut commands: Commands,
+    mut query: ParamSet<(
+        Query<
+            (
+                Entity,
+                &CanvasParams,
+                &Handle<Plot>,
+                &Handle<CanvasMaterial>,
+            ),
+            (With<MoveAxes>, Without<Locked>),
+        >,
+        Query<
+            (
+                Entity,
+                &CanvasParams,
+                &Handle<Plot>,
+                &Handle<CanvasMaterial>,
+                &ZoomAxes,
+            ),
+            Without<Locked>,
+        >,
+    )>,
+
+    mut plots: ResMut<Assets<Plot>>,
+
+    mut mouse_motion_events: EventReader<MouseMotion>,
+    mut update_plot_labels_event: EventWriter<UpdatePlotLabelsEvent>,
+    mut change_canvas_material_event: EventWriter<RespawnAllEvent>,
+    mut update_target_labels_event: EventWriter<UpdateTargetLabelEvent>,
+    mut spawn_beziercurve_event: EventWriter<SpawnBezierCurveEvent>,
+) {
+    let delta_pixels_vec = mouse_motion_events
+        .iter()
+        .map(|e| e.delta)
+        .collect::<Vec<Vec2>>();
+    let delta_pixels = delta_pixels_vec.iter().fold(Vec2::ZERO, |acc, x| acc + *x);
+
+    // when axes have been moved, respawn the data
+    if delta_pixels != Vec2::ZERO {
+        for (canvas_entity, _graph_sprite, plot_handle, material_handle) in query.p0().iter_mut() {
+            if let Some(plot) = plots.get_mut(plot_handle) {
+                plot.move_axes(delta_pixels);
+
+                plot.compute_zeros();
+
+                update_plot_labels_event.send(UpdatePlotLabelsEvent {
+                    plot_handle: plot_handle.clone(),
+                    canvas_entity,
+                });
+
+                update_target_labels_event.send(UpdateTargetLabelEvent {
+                    plot_handle: plot_handle.clone(),
+                    canvas_entity,
+                    canvas_material_handle: material_handle.clone(),
+                });
+
+                change_canvas_material_event.send(RespawnAllEvent {
+                    plot_handle: plot_handle.clone(),
+                    // canvas_material_handle: material_handle.clone(),
+                });
+
+                plot.data
+                    .bezier_groups
+                    .iter()
+                    .enumerate()
+                    .for_each(|(k, _)| {
+                        let bezier_curve = plot.data.bezier_groups.get(k).unwrap();
+                        // So as to not spawn twice when show_animation is turned on
+                        if !bezier_curve.show_animation {
+                            spawn_beziercurve_event.send(SpawnBezierCurveEvent {
+                                group_number: k,
+                                plot_handle: plot_handle.clone(),
+                            })
+                        }
+                    });
+            }
+        }
+    }
+
+    // zoom axes using mouse scroll
+    for (canvas_entity, _graph_sprite, plot_handle, material_handle, zoom_info) in
+        query.p1().iter_mut()
+    {
+        //
+        if let Some(plot) = plots.get_mut(plot_handle) {
+            //
+            plot.zoom_axes(zoom_info.wheel_dir);
+
+            plot.clamp_tick_period();
+
+            plot.compute_zeros();
+
+            update_plot_labels_event.send(UpdatePlotLabelsEvent {
+                plot_handle: plot_handle.clone(),
+                canvas_entity,
+            });
+
+            update_target_labels_event.send(UpdateTargetLabelEvent {
+                plot_handle: plot_handle.clone(),
+                canvas_entity,
+                canvas_material_handle: material_handle.clone(),
+            });
+
+            plot.data
+                .bezier_groups
+                .iter()
+                .enumerate()
+                .for_each(|(k, _)| {
+                    let bezier_curve = plot.data.bezier_groups.get(k).unwrap();
+                    // So as to not spawn twice when show_animation is turned on
+                    if !bezier_curve.show_animation {
+                        spawn_beziercurve_event.send(SpawnBezierCurveEvent {
+                            group_number: k,
+                            plot_handle: plot_handle.clone(),
+                        })
+                    }
+                });
+        }
+
+        commands.entity(canvas_entity).remove::<ZoomAxes>();
+
+        change_canvas_material_event.send(RespawnAllEvent {
+            plot_handle: plot_handle.clone(),
+            // canvas_material_handle: material_handle.clone(),
+        });
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// in markers folder
+File: mod.rs
+
+use bevy::{
+    // asset::Assets,
+    core_pipeline::core_2d::Transparent2d,
+    ecs::system::lifetimeless::{Read, SQuery, SRes},
+    ecs::system::SystemParamItem,
+    prelude::*,
+    reflect::TypeUuid,
+    render::{
+        extract_component::{ComponentUniforms, DynamicUniformIndex, UniformComponentPlugin},
+        extract_component::{ExtractComponent, ExtractComponentPlugin},
+        extract_resource::ExtractResource,
+        mesh::{GpuBufferInfo, MeshVertexBufferLayout},
+        render_asset::RenderAssets,
+        render_phase::{
+            AddRenderCommand, DrawFunctions, EntityRenderCommand, RenderCommandResult, RenderPhase,
+            SetItemPipeline, TrackedRenderPass,
+        },
+        // render_resource::{std140::AsStd140, *},
+        render_resource::*,
+        renderer::RenderDevice,
+
+        view::{ComputedVisibility, Msaa, Visibility, VisibleEntities},
+        view::{ExtractedView, NoFrustumCulling},
+        RenderApp,
+        RenderStage,
+    },
+    sprite::{
+        Mesh2dHandle, Mesh2dPipeline, Mesh2dPipelineKey, Mesh2dUniform, SetMesh2dBindGroup,
+        SetMesh2dViewBindGroup,
+    },
+    utils::FloatOrd,
+};
+
+use crate::plot::*;
+use crate::util::*;
+use bytemuck::{Pod, Zeroable};
+use crevice::std140::AsStd140;
+
+// TODOs:
+// 1) Modify the transform instead of spawning brand new entities
+// this way, the uniform will stay the same
+
+pub(crate) fn markers_setup(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut change_canvas_material_event: EventReader<RespawnAllEvent>,
+    mut plots: ResMut<Assets<Plot>>,
+    query: Query<(Entity, &Handle<Plot>), With<MarkerUniform>>,
+) {
+    for event in change_canvas_material_event.iter() {
+        //
+        for (entity, plot_handle) in query.iter() {
+            if event.plot_handle == *plot_handle {
+                commands.entity(entity).despawn();
+            }
+        }
+
+        let mut plot = plots.get_mut(&event.plot_handle).unwrap();
+
+        plot_points(
+            &mut commands,
+            &mut meshes,
+            // ys,
+            &mut plot,
+            &event.plot_handle,
+        )
+    }
+}
+
+fn plot_points(
+    commands: &mut Commands,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    plot: &mut Plot,
+    plot_handle: &Handle<Plot>,
+) {
+    let data = plot.data.clone();
+    // let color = data.marker_plot.color;
+    for marker_plot in data.marker_groups.iter() {
+        let ys = marker_plot.data.clone();
+        // let color = marker_plot.color;
+        // let ys_world = plot.plot_to_local(&ys);
+        let ys_world = ys.iter().map(|y| plot.to_local(*y)).collect::<Vec<Vec2>>();
+
+        let quad_size = 30.0;
+
+        commands
+            .spawn_bundle((
+                Mesh2dHandle(meshes.add(Mesh::from(shape::Quad {
+                    size: Vec2::splat(quad_size),
+                    flip: false,
+                }))),
+                GlobalTransform::default(),
+                Transform::from_translation(Vec3::new(0.0, 0.0, 1.12)),
+                Visibility::default(),
+                ComputedVisibility::default(),
+                MarkerInstanceMatData(
+                    ys_world
+                        .iter()
+                        .map(|v| MarkerInstanceData {
+                            //
+                            // TODO: take inner border into account
+                            //
+                            position: Vec3::new(v.x, v.y, 1.01)
+                                + plot.canvas_position.extend(0.000),
+                            scale: 1.0,
+                            color: Color::rgba(0.8, 0.6, 0.1, 1.0).as_rgba_f32(),
+                        })
+                        .collect(),
+                ),
+                NoFrustumCulling,
+                // NoFrustumCulling,
+            ))
+            .insert(plot_handle.clone())
+            .insert(MarkerUniform {
+                marker_size: marker_plot.size,
+                hole_size: 1.0,
+                zoom: 1.0,
+                marker_type: marker_plot.marker_style.to_int32(),
+                marker_point_color: col_to_vec4(marker_plot.marker_point_color),
+                color: col_to_vec4(marker_plot.color),
+                quad_size,
+                inner_canvas_size_in_pixels: plot.canvas_size / (1.0 + plot.outer_border),
+                // outer_border: plot.outer_border,
+                canvas_position: plot.canvas_position,
+                contour: if marker_plot.draw_contour { 1.0 } else { 0.0 },
+            });
+    }
+}
+
+#[derive(Component)]
+pub(crate) struct MarkerInstanceMatData(Vec<MarkerInstanceData>);
+
+impl ExtractComponent for MarkerInstanceMatData {
+    type Query = &'static MarkerInstanceMatData;
+    type Filter = ();
+
+    fn extract_component(item: bevy::ecs::query::QueryItem<Self::Query>) -> Self {
+        MarkerInstanceMatData(item.0.clone())
+    }
+}
+
+#[derive(Component, Default)]
+pub(crate) struct MarkerMesh2d;
+
+
+#[derive(Component, Clone, AsBindGroup, ShaderType)]
+pub(crate) struct MarkerUniform {
+    #[uniform(0)]
+    pub marker_size: f32,
+    /// When the ```marker_point_color``` field is different from the ```color``` field,
+    /// there is a small visible circle within the marker. ```hole_size``` controls the size of the circle.
+    #[uniform(0)]
+    pub hole_size: f32,
+    #[uniform(0)]
+    pub zoom: f32,
+    #[uniform(0)]
+    pub marker_type: i32,
+    /// Size of the instanced square quad for one marker.
+    #[uniform(0)]
+    pub quad_size: f32,
+
+    /// Shows a black contour around the marker if the value is > 0.5.
+    #[uniform(0)]
+    pub contour: f32,
+    #[uniform(0)]
+    pub inner_canvas_size_in_pixels: Vec2,
+    #[uniform(0)]
+    pub canvas_position: Vec2,
+    #[uniform(0)]
+    pub color: Vec4,
+
+    /// Color of the small circle within the marker.
+    #[uniform(0)]
+    pub marker_point_color: Vec4,
+}
+
+impl ExtractComponent for MarkerUniform {
+    type Query = &'static MarkerUniform;
+    type Filter = ();
+
+    fn extract_component(item: bevy::ecs::query::QueryItem<Self::Query>) -> Self {
+        item.clone()
+
+    }
+}
+
+// TODO: we have instance data, but we don't use it at the moment.
+// One use case would be to have marker size as an additional dimension.
+
+#[derive(Clone, Copy, Pod, Zeroable)]
+#[repr(C)]
+struct MarkerInstanceData {
+    position: Vec3,
+    scale: f32,
+    color: [f32; 4],
+}
+
+/// Custom pipeline for 2d meshes with vertex colors
+pub(crate) struct MarkerMesh2dPipeline {
+    /// this pipeline wraps the standard [`Mesh2dPipeline`]
+    mesh2d_pipeline: Mesh2dPipeline,
+    pub custom_uniform_layout: BindGroupLayout,
+    // pub shader: Handle<Shader>,
+    // material_layout: BindGroupLayout,
+}
+
+impl FromWorld for MarkerMesh2dPipeline {
+    fn from_world(world: &mut World) -> Self {
+        let mesh2d_pipeline = Mesh2dPipeline::from_world(world).clone();
+
+        let render_device = world.get_resource::<RenderDevice>().unwrap();
+
+        let custom_uniform_layout =
+            render_device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+                entries: &[BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::VERTEX | ShaderStages::FRAGMENT,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: true,
+                        min_binding_size: BufferSize::new(MarkerUniform::min_size().into()),
+                    },
+                    count: None,
+                }],
+                label: Some("markers_uniform_layout"),
+            });
+
+        Self {
+            mesh2d_pipeline,
+            custom_uniform_layout,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub(crate) struct MarkerPipelineKey {
+    mesh: Mesh2dPipelineKey,
+    shader_handle: Handle<Shader>,
+}
+
+impl SpecializedMeshPipeline for MarkerMesh2dPipeline {
+    type Key = MarkerPipelineKey;
+
+    fn specialize(
+        &self,
+        key: Self::Key,
+        layout: &MeshVertexBufferLayout,
+    ) -> Result<RenderPipelineDescriptor, SpecializedMeshPipelineError> {
+        let mut descriptor = self.mesh2d_pipeline.specialize(key.mesh, layout)?;
+
+        descriptor.vertex.shader = key.shader_handle.clone();
+        descriptor.vertex.buffers.push(VertexBufferLayout {
+            array_stride: std::mem::size_of::<MarkerInstanceData>() as u64,
+            step_mode: VertexStepMode::Instance,
+            attributes: vec![
+                VertexAttribute {
+                    format: VertexFormat::Float32x4,
+                    offset: 0,
+                    shader_location: 3, // shader locations 0-2 are taken up by Position, Normal and UV attributes
+                },
+                VertexAttribute {
+                    format: VertexFormat::Float32x4,
+                    offset: VertexFormat::Float32x4.size(),
+                    shader_location: 4,
+                },
+            ],
+        });
+        descriptor.fragment.as_mut().unwrap().shader = key.shader_handle.clone();
+        descriptor.layout = Some(vec![
+            self.mesh2d_pipeline.view_layout.clone(),
+            self.custom_uniform_layout.clone(),
+            self.mesh2d_pipeline.mesh_layout.clone(),
+        ]);
+
+        Ok(descriptor)
+    }
+}
+
+// This specifies how to render a colored 2d mesh
+type DrawMarkerMesh2d = (
+    // Set the pipeline
+    SetItemPipeline,
+    // Set the view uniform as bind group 0
+    SetMesh2dViewBindGroup<0>,
+    // Set the marker uniform as bind group 1
+    SetMarkerUniformBindGroup<1>,
+    // Set the mesh uniform as bind group 2
+    SetMesh2dBindGroup<2>,
+    // Draw the mesh
+    DrawMarkerMeshInstanced,
+);
+
+pub(crate) struct MarkerMesh2dPlugin;
+
+pub(crate) struct MarkerShaderHandle(pub Handle<Shader>);
+
+pub const MARKER_SHADER_HANDLE: HandleUntyped =
+    HandleUntyped::weak_from_u64(Shader::TYPE_UUID, 9826352034109932589);
+
+impl Plugin for MarkerMesh2dPlugin {
+    fn build(&self, app: &mut App) {
+        let mut shaders = app.world.get_resource_mut::<Assets<Shader>>().unwrap();
+
+        let handle_untyped = MARKER_SHADER_HANDLE.clone();
+
+        shaders.set_untracked(
+            handle_untyped.clone(),
+            Shader::from_wgsl(include_str!("markers.wgsl")),
+        );
+
+        let shader_typed_handle = shaders.get_handle(handle_untyped);
+
+        // app.add_plugin(UniformComponentPlugin::<MarkerUniform>::default());
+        app.add_plugin(ExtractComponentPlugin::<MarkerInstanceMatData>::default());
+        app.add_plugin(UniformComponentPlugin::<MarkerUniform>::default());
+        app.add_plugin(ExtractComponentPlugin::<MarkerUniform>::default());
+
+        // Register our custom draw function and pipeline, and add our render systems
+        let render_app = app.get_sub_app_mut(RenderApp).unwrap();
+        render_app
+            .add_render_command::<Transparent2d, DrawMarkerMesh2d>()
+            .init_resource::<MarkerMesh2dPipeline>()
+            .init_resource::<SpecializedMeshPipelines<MarkerMesh2dPipeline>>()
+            .insert_resource(MarkerShaderHandle(shader_typed_handle))
+            .add_system_to_stage(RenderStage::Prepare, prepare_instance_buffers)
+            // .add_system_to_stage(RenderStage::Extract, extract_colored_mesh2d)
+            .add_system_to_stage(RenderStage::Queue, queue_marker_uniform_bind_group)
+            .add_system_to_stage(RenderStage::Queue, queue_colored_mesh2d);
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn queue_colored_mesh2d(
+    transparent_draw_functions: Res<DrawFunctions<Transparent2d>>,
+    colored_mesh2d_pipeline: Res<MarkerMesh2dPipeline>,
+    mut pipelines: ResMut<SpecializedMeshPipelines<MarkerMesh2dPipeline>>,
+    mut pipeline_cache: ResMut<PipelineCache>,
+    msaa: Res<Msaa>,
+    render_meshes: Res<RenderAssets<Mesh>>,
+    shader_handle: Res<MarkerShaderHandle>,
+    colored_mesh2d: Query<(Entity, &Mesh2dHandle, &Mesh2dUniform), With<MarkerInstanceMatData>>,
+    mut views: Query<(&ExtractedView, &mut RenderPhase<Transparent2d>)>,
+) {
+    if colored_mesh2d.is_empty() {
+        return;
+    }
+
+    // Iterate each view (a camera is a view)
+    // for (visible_entities, mut transparent_phase) in views.iter_mut() {
+    for (_view, mut transparent_phase) in views.iter_mut() {
+        let draw_colored_mesh2d = transparent_draw_functions
+            .read()
+            .get_id::<DrawMarkerMesh2d>()
+            .unwrap();
+
+
+        let mesh_key = MarkerPipelineKey {
+            mesh: Mesh2dPipelineKey::from_msaa_samples(msaa.samples),
+            shader_handle: shader_handle.0.clone(),
+        };
+
+        // let msaa_key = MeshPipelineKey::from_msaa_samples(msaa.samples());
+
+        // Queue all entities visible to that view
+        // for visible_entity in &visible_entities.entities {
+        for (entity, mesh2d_handle, mesh2d_uniform) in colored_mesh2d.iter() {
+            // if let Ok((mesh2d_handle, mesh2d_uniform)) = colored_mesh2d.get(*visible_entity) {
+            let mut mesh2d_key = mesh_key.clone();
+            if let Some(mesh) = render_meshes.get(&mesh2d_handle.0) {
+                mesh2d_key.mesh |=
+                    Mesh2dPipelineKey::from_primitive_topology(mesh.primitive_topology);
+
+                if let Ok(pipeline_id) = pipelines.specialize(
+                    &mut pipeline_cache,
+                    &colored_mesh2d_pipeline,
+                    mesh2d_key,
+                    &mesh.layout.clone(),
+                ) {
+                    let mesh_z = mesh2d_uniform.transform.w_axis.z;
+                    transparent_phase.add(Transparent2d {
+                        entity,
+                        draw_function: draw_colored_mesh2d,
+                        pipeline: pipeline_id,
+                        sort_key: FloatOrd(mesh_z),
+                        batch_range: None,
+                    });
+                }
+            }
+            // }
+        }
+    }
+}
+
+fn prepare_instance_buffers(
+    mut commands: Commands,
+    query: Query<(Entity, &MarkerInstanceMatData)>,
+    render_device: Res<RenderDevice>,
+) {
+    for (entity, instance_data) in query.iter() {
+        let buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
+            label: Some("marker instance data buffer"),
+            contents: bytemuck::cast_slice(instance_data.0.as_slice()),
+            usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+        });
+        commands.entity(entity).insert(MarkerInstanceBuffer {
+            buffer,
+            length: instance_data.0.len(),
+        });
+    }
+}
+
+struct MarkerUniformBindGroup {
+    pub value: BindGroup,
+}
+
+fn queue_marker_uniform_bind_group(
+    mut commands: Commands,
+    mesh2d_pipeline: Res<MarkerMesh2dPipeline>,
+    render_device: Res<RenderDevice>,
+    // mesh2d_uniforms: Res<MarkerUniform>,
+    mesh2d_uniforms: Res<ComponentUniforms<MarkerUniform>>,
+) {
+    if let Some(binding) = mesh2d_uniforms.uniforms().binding() {
+        commands.insert_resource(MarkerUniformBindGroup {
+            value: render_device.create_bind_group(&BindGroupDescriptor {
+                entries: &[BindGroupEntry {
+                    binding: 0,
+                    resource: binding,
+                }],
+                label: Some("MarkersUniform_bind_group"),
+                layout: &mesh2d_pipeline.custom_uniform_layout,
+            }),
+        });
+    }
+}
+
+struct SetMarkerUniformBindGroup<const I: usize>;
+impl<const I: usize> EntityRenderCommand for SetMarkerUniformBindGroup<I> {
+    type Param = (
+        SRes<MarkerUniformBindGroup>,
+        SQuery<Read<DynamicUniformIndex<MarkerUniform>>>,
+    );
+    #[inline]
+    fn render<'w>(
+        _view: Entity,
+        item: Entity,
+        (mesh2d_bind_group, mesh2d_query): SystemParamItem<'w, '_, Self::Param>,
+        pass: &mut TrackedRenderPass<'w>,
+    ) -> RenderCommandResult {
+        let mesh2d_index = mesh2d_query.get(item).unwrap();
+
+        pass.set_bind_group(
+            I,
+            &mesh2d_bind_group.into_inner().value,
+            &[mesh2d_index.index()],
+        );
+        RenderCommandResult::Success
+    }
+}
+
+#[derive(Component)]
+struct MarkerInstanceBuffer {
+    buffer: Buffer,
+    length: usize,
+}
+
+struct DrawMarkerMeshInstanced;
+impl EntityRenderCommand for DrawMarkerMeshInstanced {
+    type Param = (
+        SRes<RenderAssets<Mesh>>,
+        SQuery<Read<Mesh2dHandle>>,
+        SQuery<Read<MarkerInstanceBuffer>>,
+    );
+
+
+    #[inline]
+    fn render<'w>(
+        _view: Entity,
+        item: Entity,
+        (meshes, mesh_query, instance_buffer_query): SystemParamItem<'w, '_, Self::Param>,
+        pass: &mut TrackedRenderPass<'w>,
+    ) -> RenderCommandResult {
+        let mesh_handle = &mesh_query.get(item).unwrap().0;
+        let instance_buffer = instance_buffer_query.get_inner(item).unwrap();
+
+        let gpu_mesh = match meshes.into_inner().get(mesh_handle) {
+            Some(gpu_mesh) => gpu_mesh,
+            None => return RenderCommandResult::Failure,
+        };
+
+        pass.set_vertex_buffer(0, gpu_mesh.vertex_buffer.slice(..));
+        pass.set_vertex_buffer(1, instance_buffer.buffer.slice(..));
+
+        match &gpu_mesh.buffer_info {
+            GpuBufferInfo::Indexed {
+                buffer,
+                index_format,
+                count,
+            } => {
+                pass.set_index_buffer(buffer.slice(..), 0, *index_format);
+                pass.draw_indexed(0..*count, 0, 0..instance_buffer.length as u32);
+            }
+            GpuBufferInfo::NonIndexed { vertex_count } => {
+                pass.draw(0..*vertex_count, 0..instance_buffer.length as u32);
+            }
+        }
+        RenderCommandResult::Success
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// in bezier folder
+File: mod.rs
+
+pub mod bezier;
+#[allow(unused_imports)]
+pub use bezier::*;
+
+
+
+
+
+File: bezier.rs
+
+use bevy::{
+    // asset::Assets,
+    core_pipeline::core_2d::Transparent2d,
+    ecs::system::lifetimeless::{Read, SQuery, SRes},
+    ecs::system::SystemParamItem,
+    prelude::*,
+    reflect::TypeUuid,
+    // reflect::TypeUuid,
+    render::{
+        extract_component::{ComponentUniforms, DynamicUniformIndex, UniformComponentPlugin},
+        extract_resource::{ExtractResource, ExtractResourcePlugin},
+        mesh::{Indices, MeshVertexAttribute, MeshVertexBufferLayout},
+        render_asset::RenderAssets,
+        render_phase::{
+            AddRenderCommand, DrawFunctions, EntityRenderCommand, RenderCommandResult, RenderPhase,
+            SetItemPipeline, TrackedRenderPass,
+        },
+        render_resource::*,
+
+        renderer::RenderDevice,
+        texture::BevyDefault,
+        texture::GpuImage,
+        view::VisibleEntities,
+        RenderApp,
+        RenderStage,
+    },
+    sprite::{
+        DrawMesh2d, Material2d, Material2dKey, Material2dPlugin, MaterialMesh2dBundle,
+        Mesh2dHandle, Mesh2dPipeline, Mesh2dPipelineKey, Mesh2dUniform, SetMesh2dBindGroup,
+        SetMesh2dViewBindGroup,
+    },
+    utils::FloatOrd,
+};
+
+use crevice::std140::AsStd140;
+
+use crate::plot::*;
+use crate::util::*;
+
+use itertools_num::linspace;
+
+const ATTRIBUTE_ENDS: MeshVertexAttribute =
+    MeshVertexAttribute::new("Ends", 335119774, VertexFormat::Float32x4);
+
+const ATTRIBUTE_CONTROL_POINT: MeshVertexAttribute =
+    MeshVertexAttribute::new("Vertext_Control", 465542875, VertexFormat::Float32x4);
+
+
+
+#[derive(Copy, Clone, Debug)]
+struct Line(Vec2, Vec2);
+
+impl Line {
+    // finding the intersection of two lines. Used to get the control point of a
+    // quadratic bezier curve
+    pub fn intersect(self, other: Self) -> Option<Vec2> {
+        let a1 = self.1.y - self.0.y;
+        let b1 = self.0.x - self.1.x;
+        let c1 = a1 * self.0.x + b1 * self.0.y;
+
+        let a2 = other.1.y - other.0.y;
+        let b2 = other.0.x - other.1.x;
+        let c2 = a2 * other.0.x + b2 * other.0.y;
+
+        let delta = a1 * b2 - a2 * b1;
+
+        if delta == 0.0 {
+            return None;
+        }
+
+        Some(Vec2::new(
+            (b2 * c1 - b1 * c2) / delta,
+            (a1 * c2 - a2 * c1) / delta,
+        ))
+    }
+}
+
+// Compute derivatives at each point
+pub(crate) fn make_df(xs: &Vec<f32>, time: f32, f: &fn(f32, f32) -> f32) -> (Vec<Vec2>, Vec<Vec2>) {
+    let delta = (xs[1] - xs[0]) / 1000.0;
+
+    // derivatives
+    let dfs = xs
+        .iter()
+        .map(|x| Vec2::new(1.0, (f(x + delta, time) - f(x - delta, time)) / delta / 2.0))
+        .collect::<Vec<Vec2>>();
+
+    // normals
+    let ns = dfs
+        .iter()
+        .map(|q| Vec2::new(q.y, -q.x).normalize())
+        .collect::<Vec<Vec2>>();
+
+    return (dfs, ns);
+
+
+}
+
+
+
+#[derive(TypeUuid, Component, Clone, ExtractResource, AsBindGroup, ShaderType)]
+#[uuid = "968a0c66-6019-454a-a1d7-551fa42c9de4"]
+pub(crate) struct BezierCurveUniform {
+    /// If set to > 0.5, the curve will be split into mechanical joints, but it's just a look
+    #[uniform(0)]
+    pub mech: f32,
+    #[uniform(0)]
+    pub zoom: f32,
+    #[uniform(0)]
+    pub inner_canvas_size_in_pixels: Vec2,
+    #[uniform(0)]
+    pub canvas_position_in_pixels: Vec2,
+    #[uniform(0)]
+    pub color: Vec4,
+
+    /// Curve thickness
+    #[uniform(0)]
+    pub size: f32,
+
+    /// unused
+    #[uniform(0)]
+    pub dummy: f32,
+    /// unused
+    #[uniform(0)]
+    pub style: i32,
+}
+
+pub(crate) fn update_bezier_uniform(
+    mut plots: ResMut<Assets<Plot>>,
+    mut bez_events: EventReader<UpdateBezierShaderEvent>,
+    mut query: Query<(&Handle<Plot>, &mut BezierCurveUniform)>,
+) {
+    for event in bez_events.iter() {
+        if let Ok(query_mut) = query.get_mut(event.entity) {
+            let (plot_handle, mut bezier_uniform) = query_mut;
+
+            let plot = plots.get_mut(plot_handle).unwrap();
+            plot.compute_zeros();
+
+            let bezier_curve = &plot.data.bezier_groups[event.group_number];
+
+            let bez_uni = bezier_uniform.as_mut();
+            *bez_uni = BezierCurveUniform {
+                mech: if bezier_curve.mech { 1.0 } else { 0.0 },
+                dummy: plot.bezier_dummy,
+                zoom: plot.zoom,
+                inner_canvas_size_in_pixels: plot.canvas_size / (1.0 + plot.outer_border),
+                canvas_position_in_pixels: plot.canvas_position,
+                color: col_to_vec4(bezier_curve.color),
+                size: bezier_curve.size,
+                style: bezier_curve.line_style.clone().to_int32(),
+            };
+        }
+    }
+}
+
+pub(crate) struct SpawnBezierCurveEvent {
+    pub group_number: usize,
+    pub plot_handle: Handle<Plot>,
+}
+
+pub(crate) fn spawn_bezier_function(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut plots: ResMut<Assets<Plot>>,
+    mut spawn_beziercurve_event: EventReader<SpawnBezierCurveEvent>,
+    mut bezier_materials: ResMut<Assets<BezierCurveUniform>>,
+
+    query: Query<(Entity, &BezierCurveNumber)>,
+    time: Res<Time>,
+) {
+    // for event in spawn_beziercurve_event.iter() {
+    for event in spawn_beziercurve_event.iter() {
+        //
+        if let Some(mut plot) = plots.get_mut(&event.plot_handle.clone()) {
+            //
+            // remove all the bezier curves
+            // TODO: currently runs proportionally to curve_number^2. Optimize
+            for (entity, curve_number) in query.iter() {
+                println!(
+                    "number: {} despawned: {}",
+                    curve_number.0, event.group_number
+                );
+                if curve_number.0 == event.group_number {
+                    commands.entity(entity).despawn();
+                }
+            }
+
+            let num_pts = plot.bezier_num_points;
+            let xs_linspace = linspace(plot.bounds.lo.x, plot.bounds.up.x, num_pts);
+            let xs = xs_linspace.into_iter().collect::<Vec<f32>>();
+
+            plot_fn(
+                &mut commands,
+                &mut meshes,
+                xs,
+                event.group_number,
+                &mut plot,
+                &event.plot_handle,
+                &mut bezier_materials,
+                &time,
+            );
+        }
+    }
+}
+
+pub(crate) fn animate_bezier(
+    mut event: EventWriter<SpawnBezierCurveEvent>,
+    plots: Res<Assets<Plot>>,
+    query: Query<(&Handle<Plot>, &BezierCurveNumber)>,
+) {
+    for (plot_handle, curve_number) in query.iter() {
+        if let Some(plot) = plots.get(plot_handle) {
+            if let Some(bezier_curve) = plot.data.bezier_groups.get(curve_number.0) {
+                if bezier_curve.show_animation {
+                    event.send(SpawnBezierCurveEvent {
+                        plot_handle: plot_handle.clone(),
+                        group_number: curve_number.0,
+                    });
+                }
+            }
+        }
+    }
+}
+
+fn plot_fn(
+    commands: &mut Commands,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    xs: Vec<f32>,
+    curve_number: usize,
+    plot: &mut Plot,
+    plot_handle: &Handle<Plot>,
+    bezier_materials: &mut ResMut<Assets<BezierCurveUniform>>,
+    time: &Res<Time>,
+) {
+    plot.compute_zeros();
+
+    if let Some(bezier_curve) = plot.data.bezier_groups.get(curve_number) {
+        let func = bezier_curve.function.clone();
+
+        let num_pts = plot.bezier_num_points;
+
+        let t = time.seconds_since_startup() as f32;
+        let ys = xs
+            .iter()
+            .map(|x| Vec2::new(*x, func(*x, t)))
+            .collect::<Vec<Vec2>>();
+
+        let ys_world = ys.iter().map(|y| plot.to_local(*y)).collect::<Vec<Vec2>>();
+
+        let (dys, _) = make_df(&xs, t, &func);
+
+        let dys_p_ys = dys
+            .iter()
+            .zip(ys.iter())
+            .map(|(dy, y)| *dy + *y)
+            .collect::<Vec<Vec2>>();
+
+        // let dys_p_ys_world = plot.plot_to_local(&dys_p_ys);
+        let dys_p_ys_world = dys_p_ys
+            .iter()
+            .map(|y| plot.to_local(*y))
+            .collect::<Vec<Vec2>>();
+
+        let mut ends = Vec::new();
+
+        let mut mesh_attr_uvs: Vec<[f32; 2]> = Vec::new();
+        let mut mesh_attr_controls: Vec<[f32; 4]> = Vec::new();
+
+        let mut mesh0 = vec![];
+        let mut inds: Vec<u32> = vec![];
+
+        let mut controls = Vec::new();
+        let mut kk = 0;
+
+        let bounds_world = plot.compute_bounds_world();
+
+        let line_width = 30.0;
+        for k in 0..num_pts - 1 {
+            // TODO: Figure out what quadt-offset does
+            let quadt_offset = line_width * 10.0;
+
+            mesh0.push(Vec2::new(ys_world[k].x - quadt_offset, bounds_world.up.y));
+            mesh0.push(Vec2::new(ys_world[k].x - quadt_offset, bounds_world.lo.y));
+
+            mesh0.push(Vec2::new(
+                ys_world[k + 1].x + quadt_offset,
+                bounds_world.up.y,
+            ));
+            mesh0.push(Vec2::new(
+                ys_world[k + 1].x + quadt_offset,
+                bounds_world.lo.y,
+            ));
+
+            mesh_attr_uvs.push([ys_world[k].x - quadt_offset, bounds_world.up.y]);
+            mesh_attr_uvs.push([ys_world[k].x - quadt_offset, bounds_world.lo.y]);
+            mesh_attr_uvs.push([ys_world[k + 1].x + quadt_offset, bounds_world.up.y]);
+            mesh_attr_uvs.push([ys_world[k + 1].x + quadt_offset, bounds_world.lo.y]);
+
+            let ki = kk * 4;
+
+            inds.push(ki as u32);
+            inds.push((ki + 1) as u32);
+            inds.push((ki + 2) as u32);
+
+            inds.push((ki + 3) as u32);
+            inds.push((ki + 2) as u32);
+            inds.push((ki + 1) as u32);
+
+            let mut is_last = 0.0;
+            if k == num_pts - 2 {
+                is_last = 1.0;
+            }
+
+            // if the curvature is high enough, we need to locally estimate the function
+            // as a bezier curve. Else, we estimate it as a line.
+
+            // if the angle between the two tangents is greater than 10 degrees,
+            // we use a bezier curve (cos(3 degrees) ~= 0.0.9986)))
+
+            if (dys[k].normalize().dot(dys[k + 1].normalize())).abs() < 0.9986 {
+                let line0 = Line(ys_world[k], dys_p_ys_world[k]);
+                let line1 = Line(ys_world[k + 1], dys_p_ys_world[k + 1]);
+                let intersection = line1.intersect(line0).unwrap();
+
+                let control_point = intersection;
+
+                mesh_attr_controls.push([control_point.x, control_point.y, is_last, is_last]);
+                mesh_attr_controls.push([control_point.x, control_point.y, is_last, is_last]);
+                mesh_attr_controls.push([control_point.x, control_point.y, is_last, is_last]);
+                mesh_attr_controls.push([control_point.x, control_point.y, is_last, is_last]);
+
+                controls.push(control_point);
+
+                ends.push([
+                    ys_world[k].x,
+                    ys_world[k].y,
+                    ys_world[k + 1].x,
+                    ys_world[k + 1].y,
+                ]);
+                ends.push([
+                    ys_world[k].x,
+                    ys_world[k].y,
+                    ys_world[k + 1].x,
+                    ys_world[k + 1].y,
+                ]);
+                ends.push([
+                    ys_world[k].x,
+                    ys_world[k].y,
+                    ys_world[k + 1].x,
+                    ys_world[k + 1].y,
+                ]);
+                ends.push([
+                    ys_world[k].x,
+                    ys_world[k].y,
+                    ys_world[k + 1].x,
+                    ys_world[k + 1].y,
+                ]);
+            } else {
+                // line
+                controls.push(Vec2::new(0.50001, 0.00001));
+
+                mesh_attr_controls.push([ys_world[k].x, ys_world[k].y, is_last, is_last]);
+                mesh_attr_controls.push([ys_world[k].x, ys_world[k].y, is_last, is_last]);
+                mesh_attr_controls.push([ys_world[k + 1].x, ys_world[k + 1].y, is_last, is_last]);
+                mesh_attr_controls.push([ys_world[k + 1].x, ys_world[k + 1].y, is_last, is_last]);
+
+                ends.push([
+                    ys_world[k].x,
+                    ys_world[k].y,
+                    ys_world[k + 1].x,
+                    ys_world[k + 1].y,
+                ]);
+                ends.push([
+                    ys_world[k].x,
+                    ys_world[k].y,
+                    ys_world[k + 1].x,
+                    ys_world[k + 1].y,
+                ]);
+                ends.push([
+                    ys_world[k].x,
+                    ys_world[k].y,
+                    ys_world[k + 1].x,
+                    ys_world[k + 1].y,
+                ]);
+                ends.push([
+                    ys_world[k].x,
+                    ys_world[k].y,
+                    ys_world[k + 1].x,
+                    ys_world[k + 1].y,
+                ]);
+            }
+            kk = kk + 1;
+        }
+
+        let mut mesh_pos_attributes: Vec<[f32; 3]> = Vec::new();
+        let mut normals = Vec::new();
+        for position in mesh0 {
+            mesh_pos_attributes.push([position.x, position.y, 0.0]);
+            normals.push([0.0, 0.0, 1.0]);
+        }
+
+        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
+
+        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, mesh_pos_attributes.clone());
+
+        // let mva_ends = MeshVertexAttribute::new("Ends", 1, VertexFormat::Float32x4);
+
+        mesh.insert_attribute(ATTRIBUTE_ENDS, ends);
+
+        mesh.set_indices(Some(Indices::U32(inds)));
+
+        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, mesh_attr_uvs);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+
+        // let mva_controls = MeshVertexAttribute::new("Vertext_Control", 3, VertexFormat::Float32x4);
+
+        mesh.insert_attribute(ATTRIBUTE_CONTROL_POINT, mesh_attr_controls);
+
+        // println!("mesh: {:?}", mesh.iter().map(|x| ));
+
+        let bezier_material = BezierCurveUniform {
+            mech: if bezier_curve.mech { 1.0 } else { 0.0 },
+            dummy: plot.bezier_dummy,
+            zoom: plot.zoom,
+            inner_canvas_size_in_pixels: plot.canvas_size / (1.0 + plot.outer_border),
+            canvas_position_in_pixels: plot.canvas_position,
+            color: col_to_vec4(bezier_curve.color),
+            size: bezier_curve.size,
+            style: bezier_curve.line_style.clone().to_int32(),
+        };
+
+        let bezier_material_handle = bezier_materials.add(bezier_material);
+
+        commands
+            .spawn()
+
+            .insert_bundle(MaterialMesh2dBundle {
+                mesh: Mesh2dHandle(meshes.add(mesh)),
+                material: bezier_material_handle.clone(),
+                transform: Transform::from_translation(plot.canvas_position.extend(1.10)),
+                ..Default::default()
+            })
+            .insert(BezierCurveNumber(curve_number))
+            .insert(plot_handle.clone());
+        // .insert();
+    }
+}
+
+/// A marker component for colored 2d meshes
+#[derive(Component, Default)]
+pub(crate) struct BezierMesh2d;
+
+struct BezierMesh2dPipeline {
+
+    pub mesh2d_pipeline: Mesh2dPipeline,
+    pub custom_uniform_layout: BindGroupLayout,
+}
+
+impl FromWorld for BezierMesh2dPipeline {
+    fn from_world(world: &mut World) -> Self {
+        let mesh2d_pipeline = Mesh2dPipeline::from_world(world).clone();
+
+        let render_device = world.get_resource::<RenderDevice>().unwrap();
+
+        let custom_uniform_layout =
+            render_device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+                entries: &[BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::VERTEX | ShaderStages::FRAGMENT,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: true,
+                        min_binding_size: BufferSize::new(BezierCurveUniform::min_size().into()),
+                    },
+                    count: None,
+                }],
+                label: Some("custom_uniform_layout"),
+            });
+
+
+        Self {
+
+            mesh2d_pipeline,
+            custom_uniform_layout,
+
+        }
+    }
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub(crate) struct BezierPipelineKey {
+    mesh: Mesh2dPipelineKey,
+    shader_handle: Handle<Shader>,
+}
+
+// We implement `SpecializedPipeline` to customize the default rendering from `Mesh2dPipeline`
+impl SpecializedRenderPipeline for BezierMesh2dPipeline {
+    type Key = BezierPipelineKey;
+
+    fn specialize(
+        &self,
+        key: Self::Key,
+        // layout: &MeshVertexBufferLayout,
+    ) -> RenderPipelineDescriptor {
+        // let mut descriptor = self.mesh2d_pipeline.specialize(key.mesh);
+
+        let formats = vec![
+            // Position
+            VertexFormat::Float32x3,
+            // Color
+            VertexFormat::Float32x4,
+            // UV
+            VertexFormat::Float32x2,
+            // Controls
+            VertexFormat::Float32x4,
+        ];
+
+        let vertex_layout =
+            VertexBufferLayout::from_vertex_formats(VertexStepMode::Vertex, formats);
+
+        RenderPipelineDescriptor {
+            vertex: VertexState {
+                // Use our custom shader
+                shader: key.shader_handle.clone(),
+                entry_point: "vertex".into(),
+                shader_defs: Vec::new(),
+                buffers: vec![vertex_layout],
+            },
+            fragment: Some(FragmentState {
+                // Use our custom shader
+                shader: key.shader_handle.clone(),
+                shader_defs: Vec::new(),
+                entry_point: "fragment".into(),
+                targets: vec![Some(ColorTargetState {
+                    format: TextureFormat::bevy_default(),
+                    blend: Some(BlendState::ALPHA_BLENDING),
+                    write_mask: ColorWrites::ALL,
+                })],
+            }),
+            // Use the two standard uniforms for 2d meshes
+            layout: Some(vec![
+                // Bind group 0 is the view uniform
+                self.mesh2d_pipeline.view_layout.clone(),
+                // Bind group 1 is the mesh uniform
+                self.mesh2d_pipeline.mesh_layout.clone(),
+                //
+                self.custom_uniform_layout.clone(),
+            ]),
+            primitive: PrimitiveState {
+                front_face: FrontFace::Ccw,
+                cull_mode: Some(Face::Back),
+                unclipped_depth: false,
+                polygon_mode: PolygonMode::Fill,
+                conservative: false,
+                topology: key.mesh.primitive_topology(),
+                strip_index_format: None,
+            },
+            depth_stencil: None,
+            multisample: MultisampleState {
+                count: key.mesh.msaa_samples(),
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            label: Some("colored_mesh2d_pipeline".into()),
+        }
+    }
+}
+
+/// Plugin that renders [`BezierMesh2d`]s
+pub(crate) struct BezierMesh2dPlugin;
+
+pub(crate) struct BezierShaderHandle(pub Handle<Shader>);
+
+pub const BEZIER_SHADER_HANDLE: HandleUntyped =
+    HandleUntyped::weak_from_u64(Shader::TYPE_UUID, 1616035468340571005);
+
+impl Plugin for BezierMesh2dPlugin {
+    fn build(&self, app: &mut App) {
+        let mut shaders = app.world.get_resource_mut::<Assets<Shader>>().unwrap();
+        let handle_untyped = BEZIER_SHADER_HANDLE.clone();
+
+        shaders.set_untracked(
+            handle_untyped.clone(),
+            Shader::from_wgsl(include_str!("bezier_spline.wgsl")),
+        );
+
+        app.add_plugin(Material2dPlugin::<BezierCurveUniform>::default());
+    }
+}
+
+impl bevy::sprite::Material2d for BezierCurveUniform {
+    fn vertex_shader() -> ShaderRef {
+        let handle_untyped = BEZIER_SHADER_HANDLE.clone();
+        let shader_handle: Handle<Shader> = handle_untyped.typed::<Shader>();
+        shader_handle.into()
+    }
+    fn fragment_shader() -> ShaderRef {
+        println!("frag shader");
+        let handle_untyped = BEZIER_SHADER_HANDLE.clone();
+        let shader_handle: Handle<Shader> = handle_untyped.typed::<Shader>();
+        shader_handle.into()
+    }
+
+    fn specialize(
+        descriptor: &mut RenderPipelineDescriptor,
+        layout: &MeshVertexBufferLayout,
+        _key: Material2dKey<Self>,
+    ) -> Result<(), SpecializedMeshPipelineError> {
+        println!("specialize");
+        let vertex_layout = layout.get_layout(&[
+            Mesh::ATTRIBUTE_POSITION.at_shader_location(0),
+            // ATTRIBUTE_COLOR.at_shader_location(1),
+            ATTRIBUTE_ENDS.at_shader_location(1),
+            Mesh::ATTRIBUTE_UV_0.at_shader_location(2),
+            ATTRIBUTE_CONTROL_POINT.at_shader_location(3),
+        ])?;
+        descriptor.vertex.buffers = vec![vertex_layout];
+        Ok(())
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+// in segments folder
+File: mod.rs
+
+pub mod segments;
+pub use segments::*;
+
+
+
+
+File: segments.rs
+
+use bevy::{
+    core::FloatOrd,
+    core_pipeline::Transparent2d,
+    ecs::system::lifetimeless::{Read, SQuery, SRes},
+    ecs::system::SystemParamItem,
+    prelude::*,
+    // reflect::TypeUuid,
+    render::{
+        mesh::GpuBufferInfo,
+        mesh::Indices,
+        render_asset::RenderAssets,
+        render_component::{ComponentUniforms, DynamicUniformIndex, UniformComponentPlugin},
+        render_component::{ExtractComponent, ExtractComponentPlugin},
+        render_phase::{
+            AddRenderCommand, DrawFunctions, EntityRenderCommand, RenderCommandResult, RenderPhase,
+            SetItemPipeline, TrackedRenderPass,
+        },
+        render_resource::{std140::AsStd140, *},
+        renderer::RenderDevice,
+        view::VisibleEntities,
+        RenderApp,
+        RenderStage,
+        {texture::BevyDefault, texture::GpuImage},
+    },
+    sprite::{
+        DrawMesh2d, Mesh2dHandle, Mesh2dPipeline, Mesh2dPipelineKey, Mesh2dUniform,
+        SetMesh2dBindGroup, SetMesh2dViewBindGroup,
+    },
+};
+
+use bytemuck::{Pod, Zeroable};
+// use crate::canvas::*;
+use crate::inputs::*;
+
+use crate::plot::*;
+
+use crate::canvas::ChangeCanvasMaterialEvent;
+use crate::util::*;
+
+// use flo_curves::*;
+// use itertools_num::linspace;
+
+pub fn change_segment_uni(
+    mut query: Query<&mut SegmentUniform>,
+    mouse_position: Res<Cursor>,
+    mouse_button_input: Res<Input<MouseButton>>,
+) {
+    for mut segment_uni in query.iter_mut() {
+        let mouse_pos = mouse_position.position;
+
+        if mouse_button_input.pressed(MouseButton::Left) {
+
+            // println!("left: {}, right: {}", segment_uni.left, segment_uni.mech);
+        } else if mouse_button_input.pressed(MouseButton::Right) {
+            segment_uni.hole_size = mouse_pos.x / 100.0;
+            segment_uni.segment_size = mouse_pos.x / 100.0;
+            // segment_uni.ya.x = mouse_pos.x / 100.0;
+            // segment_uni.ya.y = mouse_pos.y / 100.0;
+            println!(
+                "left: {}, right: {}",
+                segment_uni.segment_size, segment_uni.hole_size
+            );
+        }
+    }
+}
+
+pub fn segments_setup(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut change_canvas_material_event: EventReader<ChangeCanvasMaterialEvent>,
+    mut plots: ResMut<Assets<Plot>>,
+    query: Query<(Entity, &Handle<Plot>), With<SegmentUniform>>,
+) {
+    for event in change_canvas_material_event.iter() {
+        //
+        for (entity, plot_handle) in query.iter() {
+            if event.plot_handle == *plot_handle {
+                commands.entity(entity).despawn();
+            }
+        }
+
+        let mut plot = plots.get_mut(&event.plot_handle).unwrap();
+
+        plot_segments(
+            &mut commands,
+            &mut meshes,
+            // ys,
+            &mut plot,
+            &event.plot_handle,
+        )
+    }
+}
+
+// Compute derivatives at each point
+pub fn make_df(ys: &Vec<Vec2>) -> (Vec<Vec2>, Vec<Vec2>) {
+    let df0 = (ys[1].y - ys[0].y) / (ys[1].x - ys[0].x);
+    let mut dfs = vec![df0];
+    for i in 1..ys.len() - 1 {
+        let y_m1 = ys[i - 1];
+        // let x0 = ys[i];
+        let y1 = ys[i + 1];
+        let dfi = (y1.y - y_m1.y) / (y1.x - y_m1.x);
+
+        dfs.push(dfi);
+    }
+
+    // for the first and last points, we need to extrapolate the first derivative using the second derivative
+    dfs[0] = dfs[1] - (ys[1].x - ys[0].x) * (dfs[2] - dfs[1]) / (ys[2].x - ys[1].x);
+
+    let la = ys.len() - 1;
+    let df_final = dfs[la - 1]
+        - (ys[la - 1].x - ys[la].x) * (dfs[la - 2] - dfs[la - 1]) / (ys[la - 2].x - ys[la - 1].x);
+
+    dfs.push(df_final);
+
+    // derivatives
+    let dfs_vec2 = dfs
+        .iter()
+        .map(|q| Vec2::new(1.0, *q).normalize())
+        .collect::<Vec<Vec2>>();
+
+    // normals
+    let ns_vec2 = dfs
+        .iter()
+        .map(|q| Vec2::new(*q, -1.0).normalize())
+        .collect::<Vec<Vec2>>();
+
+    return (dfs_vec2, ns_vec2);
+}
+
+pub fn plot_segments(
+    commands: &mut Commands,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    plot: &mut Plot,
+    plot_handle: &Handle<Plot>,
+) {
+    let data = plot.data.clone();
+    plot.compute_zeros();
+
+    for segment_plot in data.segment_groups.iter() {
+        let ys = segment_plot.data.clone();
+
+        // derivatives and normals
+        let (dfs, ns) = make_df(&ys);
+        // println!("dfs: {:?}", ns);
+
+        let num_pts = ys.len();
+
+        let ys_world = ys.iter().map(|y| plot.to_world(*y)).collect::<Vec<Vec2>>();
+
+        let quad_size = 30.0;
+
+        let mut mesh0 = Vec::new();
+        let mut mesh_attr_uvs = Vec::new();
+        let mut inds = Vec::new();
+        let mut ends = Vec::new();
+        let mut mesh_attr_controls: Vec<[f32; 4]> = Vec::new();
+
+        let line_width = 10.0;
+        for k in 0..num_pts - 1 {
+
+
+            let y0 = ys_world[k];
+            let y1 = ys_world[k + 1];
+
+            let n0 = -ns[k];
+            let n1 = -ns[k + 1];
+
+            let p0 = y0 + n0 * line_width;
+            let p1 = y0 - n0 * line_width;
+            let p2 = y1 + n1 * line_width;
+            let p3 = y1 - n1 * line_width;
+
+
+            mesh0.push(p0);
+            mesh0.push(p1);
+            mesh0.push(p2);
+            mesh0.push(p3);
+
+            ends.push([y0.x, y0.y, y1.x, y1.y]);
+            ends.push([y0.x, y0.y, y1.x, y1.y]);
+            ends.push([y0.x, y0.y, y1.x, y1.y]);
+            ends.push([y0.x, y0.y, y1.x, y1.y]);
+
+            mesh_attr_controls.push([p0.x, p0.y, p1.x, p1.y]);
+            mesh_attr_controls.push([p0.x, p0.y, p1.x, p1.y]);
+            mesh_attr_controls.push([p0.x, p0.y, p1.x, p1.y]);
+            mesh_attr_controls.push([p0.x, p0.y, p1.x, p1.y]);
+
+            mesh_attr_uvs.push([p0.x, p0.y]);
+            mesh_attr_uvs.push([p1.x, p1.y]);
+            mesh_attr_uvs.push([p2.x, p2.y]);
+            mesh_attr_uvs.push([p3.x, p3.y]);
+
+            let ki = k * 4;
+
+            inds.push(ki as u32);
+            inds.push((ki + 1) as u32);
+            inds.push((ki + 2) as u32);
+
+            inds.push((ki + 3) as u32);
+            inds.push((ki + 2) as u32);
+            inds.push((ki + 1) as u32);
+        }
+
+        let mut mesh_pos_attributes: Vec<[f32; 3]> = Vec::new();
+        // let mut normals = Vec::new();
+        // TODO: z position is here
+        for position in mesh0 {
+            mesh_pos_attributes.push([position.x, position.y, -30.0]);
+            // normals.push([0.0, 0.0, 1.0]);
+        }
+
+        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
+
+        mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, mesh_pos_attributes.clone());
+        mesh.set_attribute("Ends", ends);
+        // mesh.set_attribute(Mesh::ATTRIBUTE_NORMAL, normals.clone());
+        mesh.set_indices(Some(Indices::U32(inds)));
+        mesh.set_attribute(Mesh::ATTRIBUTE_UV_0, mesh_attr_uvs);
+
+        mesh.set_attribute("Vertext_Control", mesh_attr_controls);
+
+        commands
+            .spawn_bundle((
+                SegmentMesh2d::default(),
+                Mesh2dHandle(meshes.add(mesh)),
+
+                GlobalTransform::default(),
+                Transform::from_translation(Vec3::new(0.0, 0.0, 3.0) + plot.position.extend(0.0)),
+                Visibility::default(),
+                ComputedVisibility::default(),
+            ))
+            .insert(plot_handle.clone())
+            .insert(SegmentUniform {
+                segment_size: segment_plot.size,
+                hole_size: 1.0,
+                zoom: 1.0,
+
+                segment_point_color: col_to_vec4(segment_plot.segment_point_color),
+                color: col_to_vec4(segment_plot.color),
+                quad_size,
+                inner_canvas_size_in_pixels: plot.size / (1.0 + plot.outer_border),
+                canvas_position: plot.position,
+                contour: if segment_plot.draw_contour { 1.0 } else { 0.0 },
+            });
+    }
+}
+
+/// A marker component for colored 2d meshes
+#[derive(Component, Default)]
+pub struct SegmentMesh2d;
+
+#[derive(Component, Clone, AsStd140)]
+pub struct SegmentUniform {
+    pub segment_size: f32,
+    pub hole_size: f32,
+    pub zoom: f32,
+    pub quad_size: f32,
+    pub contour: f32,
+    pub inner_canvas_size_in_pixels: Vec2,
+    pub canvas_position: Vec2,
+    pub color: Vec4,
+    pub segment_point_color: Vec4,
+}
+
+pub struct SegmentMesh2dPipeline {
+    pub view_layout: BindGroupLayout,
+    pub mesh_layout: BindGroupLayout,
+    pub custom_uniform_layout: BindGroupLayout,
+
+    // This dummy white texture is to be used in place of optional textures
+    pub dummy_white_gpu_image: GpuImage,
+    pub shader_handle: Handle<Shader>,
+}
+
+impl FromWorld for SegmentMesh2dPipeline {
+    fn from_world(world: &mut World) -> Self {
+        let mesh2d_pipeline = Mesh2dPipeline::from_world(world).clone();
+
+        let render_device = world.get_resource::<RenderDevice>().unwrap();
+
+        let custom_uniform_layout =
+            render_device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+                entries: &[BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::VERTEX | ShaderStages::FRAGMENT,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: true,
+                        min_binding_size: BufferSize::new(
+                            SegmentUniform::std140_size_static() as u64
+                        ),
+                    },
+                    count: None,
+                }],
+                label: Some("custom_uniform_layout"),
+            });
+
+        let world = world.cell();
+        let asset_server = world.get_resource::<AssetServer>().unwrap();
+
+        let shader_handle = asset_server.load("shaders/segments.wgsl");
+
+        Self {
+            view_layout: mesh2d_pipeline.view_layout,
+            mesh_layout: mesh2d_pipeline.mesh_layout,
+            custom_uniform_layout,
+            dummy_white_gpu_image: mesh2d_pipeline.dummy_white_gpu_image,
+            shader_handle,
+        }
+    }
+}
+
+// We implement `SpecializedPipeline` to customize the default rendering from `Mesh2dPipeline`
+impl SpecializedPipeline for SegmentMesh2dPipeline {
+    type Key = Mesh2dPipelineKey;
+
+    fn specialize(&self, key: Self::Key) -> RenderPipelineDescriptor {
+        // Customize how to store the meshes' vertex attributes in the vertex buffer
+        // Our meshes only have position and color
+        let vertex_attributes = vec![
+            // Position (GOTCHA! Vertex_Position isn't first in the buffer due to how Mesh sorts attributes (alphabetically))
+            VertexAttribute {
+                format: VertexFormat::Float32x3,
+                // this offset is the size of the color attribute, which is stored first
+                offset: 16,
+                // position is available at location 0 in the shader
+                shader_location: 0,
+            },
+            // Color
+            VertexAttribute {
+                format: VertexFormat::Float32x4,
+                offset: 0,
+                shader_location: 1,
+            },
+            // uv
+            VertexAttribute {
+                format: VertexFormat::Float32x2,
+                offset: 28,
+                shader_location: 2,
+            },
+            // Control Point
+            VertexAttribute {
+                format: VertexFormat::Float32x4,
+                offset: 36,
+                shader_location: 3,
+            },
+        ];
+        // This is the sum of the size of position, color uv attributes (12 + 16 + 8 + 8 = 44)
+        let vertex_array_stride = 52;
+
+        RenderPipelineDescriptor {
+            vertex: VertexState {
+                // Use our custom shader
+                shader: self.shader_handle.clone(),
+                entry_point: "vertex".into(),
+                shader_defs: Vec::new(),
+                // Use our custom vertex buffer
+                buffers: vec![VertexBufferLayout {
+                    array_stride: vertex_array_stride,
+                    step_mode: VertexStepMode::Vertex,
+                    attributes: vertex_attributes,
+                }],
+            },
+            fragment: Some(FragmentState {
+                // Use our custom shader
+                shader: self.shader_handle.clone(),
+                shader_defs: Vec::new(),
+                entry_point: "fragment".into(),
+                targets: vec![ColorTargetState {
+                    format: TextureFormat::bevy_default(),
+                    blend: Some(BlendState::ALPHA_BLENDING),
+                    write_mask: ColorWrites::ALL,
+                }],
+            }),
+            // Use the two standard uniforms for 2d meshes
+            layout: Some(vec![
+                // Bind group 0 is the view uniform
+                self.view_layout.clone(),
+                // Bind group 1 is the mesh uniform
+                self.mesh_layout.clone(),
+                self.custom_uniform_layout.clone(),
+                // texture
+                // self.material_layout.clone(),
+            ]),
+            primitive: PrimitiveState {
+                front_face: FrontFace::Ccw,
+                cull_mode: Some(Face::Back),
+                unclipped_depth: false,
+                polygon_mode: PolygonMode::Fill,
+                conservative: false,
+                topology: key.primitive_topology(),
+                strip_index_format: None,
+            },
+            depth_stencil: None,
+            multisample: MultisampleState {
+                count: key.msaa_samples(),
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            label: Some("colored_mesh2d_pipeline".into()),
+        }
+    }
+}
+
+// This specifies how to render a colored 2d mesh
+type DrawSegmentMesh2d = (
+    // Set the pipeline
+    SetItemPipeline,
+    // Set the view uniform as bind group 0
+    SetMesh2dViewBindGroup<0>,
+    // Set the mesh uniform as bind group 1
+    SetMesh2dBindGroup<1>,
+    SetSegmentUniformBindGroup<2>,
+    // Draw the mesh
+    DrawMesh2d,
+);
+
+/// Plugin that renders [`SegmentMesh2d`]s
+pub struct SegmentMesh2dPlugin;
+
+impl Plugin for SegmentMesh2dPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_plugin(UniformComponentPlugin::<SegmentUniform>::default());
+
+        let render_app = app.get_sub_app_mut(RenderApp).unwrap();
+        render_app
+            .add_render_command::<Transparent2d, DrawSegmentMesh2d>()
+            .init_resource::<SegmentMesh2dPipeline>()
+            .init_resource::<SpecializedPipelines<SegmentMesh2dPipeline>>()
+            .add_system_to_stage(RenderStage::Extract, extract_colored_mesh2d)
+            .add_system_to_stage(RenderStage::Queue, queue_customuniform_bind_group)
+            .add_system_to_stage(RenderStage::Queue, queue_colored_mesh2d);
+    }
+}
+
+pub fn extract_colored_mesh2d(
+    mut commands: Commands,
+    mut previous_len: Local<usize>,
+    query: Query<(Entity, &SegmentUniform, &ComputedVisibility), With<SegmentMesh2d>>,
+) {
+    let mut values = Vec::with_capacity(*previous_len);
+    for (entity, custom_uni, computed_visibility) in query.iter() {
+        if !computed_visibility.is_visible {
+            continue;
+        }
+        values.push((entity, (custom_uni.clone(), SegmentMesh2d)));
+    }
+    *previous_len = values.len();
+    commands.insert_or_spawn_batch(values);
+}
+
+pub struct SegmentUniformBindGroup {
+    pub value: BindGroup,
+}
+
+pub fn queue_customuniform_bind_group(
+    mut commands: Commands,
+    mesh2d_pipeline: Res<SegmentMesh2dPipeline>,
+    render_device: Res<RenderDevice>,
+    mesh2d_uniforms: Res<ComponentUniforms<SegmentUniform>>,
+) {
+    if let Some(binding) = mesh2d_uniforms.uniforms().binding() {
+        // println!("binding: {:?}", binding);
+
+        commands.insert_resource(SegmentUniformBindGroup {
+            value: render_device.create_bind_group(&BindGroupDescriptor {
+                entries: &[BindGroupEntry {
+                    binding: 0,
+                    resource: binding,
+                }],
+                label: Some("customuniform_bind_group"),
+                layout: &mesh2d_pipeline.custom_uniform_layout,
+            }),
+        });
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn queue_colored_mesh2d(
+    transparent_draw_functions: Res<DrawFunctions<Transparent2d>>,
+    colored_mesh2d_pipeline: Res<SegmentMesh2dPipeline>,
+    mut pipelines: ResMut<SpecializedPipelines<SegmentMesh2dPipeline>>,
+    mut pipeline_cache: ResMut<RenderPipelineCache>,
+    msaa: Res<Msaa>,
+    render_meshes: Res<RenderAssets<Mesh>>,
+    colored_mesh2d: Query<(&Mesh2dHandle, &Mesh2dUniform), With<SegmentMesh2d>>,
+    mut views: Query<(&VisibleEntities, &mut RenderPhase<Transparent2d>)>,
+) {
+    if colored_mesh2d.is_empty() {
+        return;
+    }
+    // Iterate each view (a camera is a view)
+    for (visible_entities, mut transparent_phase) in views.iter_mut() {
+        let draw_colored_mesh2d = transparent_draw_functions
+            .read()
+            .get_id::<DrawSegmentMesh2d>()
+            .unwrap();
+
+        let mesh_key = Mesh2dPipelineKey::from_msaa_samples(msaa.samples);
+
+        // Queue all entities visible to that view
+        for visible_entity in &visible_entities.entities {
+            if let Ok((mesh2d_handle, mesh2d_uniform)) = colored_mesh2d.get(*visible_entity) {
+                let mut mesh2d_key = mesh_key;
+                if let Some(mesh) = render_meshes.get(&mesh2d_handle.0) {
+                    mesh2d_key |=
+                        Mesh2dPipelineKey::from_primitive_topology(mesh.primitive_topology);
+                }
+
+                let pipeline_id =
+                    pipelines.specialize(&mut pipeline_cache, &colored_mesh2d_pipeline, mesh2d_key);
+
+                let mesh_z = mesh2d_uniform.transform.w_axis.z;
+                transparent_phase.add(Transparent2d {
+                    entity: *visible_entity,
+                    draw_function: draw_colored_mesh2d,
+                    pipeline: pipeline_id,
+                    sort_key: FloatOrd(mesh_z),
+                    batch_range: None,
+                });
+            }
+        }
+    }
+}
+
+pub struct SetSegmentUniformBindGroup<const I: usize>;
+impl<const I: usize> EntityRenderCommand for SetSegmentUniformBindGroup<I> {
+    type Param = (
+        SRes<SegmentUniformBindGroup>,
+        SQuery<Read<DynamicUniformIndex<SegmentUniform>>>,
+    );
+    #[inline]
+    fn render<'w>(
+        _view: Entity,
+        item: Entity,
+        (mesh2d_bind_group, mesh2d_query): SystemParamItem<'w, '_, Self::Param>,
+        pass: &mut TrackedRenderPass<'w>,
+    ) -> RenderCommandResult {
+        let mesh2d_index = mesh2d_query.get(item).unwrap();
+
+        pass.set_bind_group(
+            I,
+            &mesh2d_bind_group.into_inner().value,
+            &[mesh2d_index.index()],
+        );
+        RenderCommandResult::Success
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+File: mod.rs
+
+pub mod segments;
+#[allow(unused_imports)]
+pub use segments::*;
+
+
+
+
+
+
+
+File: segments.rs
+
+use crate::plot::*;
+use crate::util::*;
+use bevy::{
+    asset::Assets,
+    prelude::*,
+    reflect::TypeUuid,
+    render::{
+        mesh::{Indices, MeshVertexAttribute, MeshVertexBufferLayout},
+        render_resource::*,
+        renderer::RenderDevice,
+        {texture::BevyDefault, texture::GpuImage},
+    },
+    sprite::{
+        Material2dKey, Material2dPlugin, MaterialMesh2dBundle, Mesh2dHandle, Mesh2dPipeline,
+        Mesh2dPipelineKey,
+    },
+};
+
+// TODO: circular ends in mesh and/or linear joints
+
+pub(crate) fn segments_setup(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut change_canvas_material_event: EventReader<RespawnAllEvent>,
+    mut plots: ResMut<Assets<Plot>>,
+    mut segment_material: ResMut<Assets<SegmentUniform>>,
+    query: Query<(Entity, &Handle<Plot>), With<Handle<SegmentUniform>>>,
+) {
+    for event in change_canvas_material_event.iter() {
+        //
+        for (entity, plot_handle) in query.iter() {
+            if event.plot_handle == *plot_handle {
+                commands.entity(entity).despawn();
+            }
+        }
+
+        if let Some(mut plot) = plots.get_mut(&event.plot_handle) {
+            plot_segments(
+                &mut commands,
+                &mut meshes,
+                &mut segment_material,
+                &mut plot,
+                &event.plot_handle,
+            )
+        }
+    }
+}
+
+// Compute derivatives at each point
+fn make_df(ys: &Vec<Vec2>) -> (Vec<Vec2>, Vec<Vec2>) {
+    let df0 = (ys[1].y - ys[0].y) / (ys[1].x - ys[0].x);
+    let mut dfs = vec![df0];
+    for i in 1..ys.len() - 1 {
+        let y_m1 = ys[i - 1];
+        // let x0 = ys[i];
+        let y1 = ys[i + 1];
+        let dfi = (y1.y - y_m1.y) / (y1.x - y_m1.x);
+
+        dfs.push(dfi);
+    }
+
+    // for the first and last points, we need to extrapolate the first derivative using the second derivative
+    dfs[0] = dfs[1] - (ys[1].x - ys[0].x) * (dfs[2] - dfs[1]) / (ys[2].x - ys[1].x);
+
+    let la = ys.len() - 1;
+    let df_final = dfs[la - 1]
+        - (ys[la - 1].x - ys[la].x) * (dfs[la - 2] - dfs[la - 1]) / (ys[la - 2].x - ys[la - 1].x);
+
+    dfs.push(df_final);
+
+    // derivatives
+    let dfs_vec2 = dfs
+        .iter()
+        .map(|q| Vec2::new(1.0, *q).normalize())
+        .collect::<Vec<Vec2>>();
+
+    // normals
+    let ns_vec2 = dfs
+        .iter()
+        .map(|q| Vec2::new(*q, -1.0).normalize())
+        .collect::<Vec<Vec2>>();
+
+    return (dfs_vec2, ns_vec2);
+}
+
+fn plot_segments(
+    commands: &mut Commands,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    segment_materials: &mut ResMut<Assets<SegmentUniform>>,
+    plot: &mut Plot,
+    plot_handle: &Handle<Plot>,
+) {
+    let data = plot.data.clone();
+    plot.compute_zeros();
+
+    for segment_plot in data.segment_groups.iter() {
+        let ys = segment_plot.data.clone();
+
+        // TODO: is this still needed?
+        // derivatives and normals
+        let (_dfs, _ns) = make_df(&ys);
+
+        let num_pts = ys.len();
+
+        let ys_world = ys.iter().map(|y| plot.to_local(*y)).collect::<Vec<Vec2>>();
+
+        let mut mesh0 = Vec::new();
+        let mut mesh_attr_uvs = Vec::new();
+        let mut inds = Vec::new();
+        let mut ends = Vec::new();
+        let mut mesh_attr_controls: Vec<[f32; 4]> = Vec::new();
+
+        let line_width = 5.0;
+        for k in 0..num_pts - 1 {
+            let y0 = ys_world[k];
+            let y1 = ys_world[k + 1];
+
+            let dy = (y1 - y0).normalize();
+            let n = Vec2::new(-dy.y, dy.x);
+
+            // overlapping segments
+            let p0 = y0 + n * line_width - dy * line_width * 1.0;
+            let p1 = y0 - n * line_width - dy * line_width * 1.0;
+            let p2 = y1 + n * line_width + dy * line_width * 1.0;
+            let p3 = y1 - n * line_width + dy * line_width * 1.0;
+
+            mesh0.push(p0);
+            mesh0.push(p1);
+            mesh0.push(p2);
+            mesh0.push(p3);
+
+            ends.push([y0.x, y0.y, y1.x, y1.y]);
+            ends.push([y0.x, y0.y, y1.x, y1.y]);
+            ends.push([y0.x, y0.y, y1.x, y1.y]);
+            ends.push([y0.x, y0.y, y1.x, y1.y]);
+
+            mesh_attr_controls.push([p0.x, p0.y, p1.x, p1.y]);
+            mesh_attr_controls.push([p0.x, p0.y, p1.x, p1.y]);
+            mesh_attr_controls.push([p0.x, p0.y, p1.x, p1.y]);
+            mesh_attr_controls.push([p0.x, p0.y, p1.x, p1.y]);
+
+            mesh_attr_uvs.push([p0.x, p0.y]);
+            mesh_attr_uvs.push([p1.x, p1.y]);
+            mesh_attr_uvs.push([p2.x, p2.y]);
+            mesh_attr_uvs.push([p3.x, p3.y]);
+
+            let ki = k * 4;
+
+            inds.push(ki as u32);
+            inds.push((ki + 1) as u32);
+            inds.push((ki + 2) as u32);
+
+            inds.push((ki + 3) as u32);
+            inds.push((ki + 2) as u32);
+            inds.push((ki + 1) as u32);
+        }
+
+        let mut mesh_pos_attributes: Vec<[f32; 3]> = Vec::new();
+        let mut normals = Vec::new();
+        // TODO: z position is here
+        for position in mesh0 {
+            mesh_pos_attributes.push([position.x, position.y, 0.0]);
+            normals.push([0.0, 0.0, 1.0]);
+        }
+
+        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
+
+        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, mesh_pos_attributes.clone());
+
+        // let mva_ends = MeshVertexAttribute::new("Ends", 1, VertexFormat::Float32x4);
+        mesh.insert_attribute(ATTRIBUTE_ENDS, ends);
+
+        mesh.set_indices(Some(Indices::U32(inds)));
+        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, mesh_attr_uvs);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+
+        // let mva_controls = MeshVertexAttribute::new("Vertext_Control", 3, VertexFormat::Float32x4);
+        mesh.insert_attribute(ATTRIBUTE_CONTROL_POINT, mesh_attr_controls);
+
+        let segment_material = SegmentUniform {
+            mech: if segment_plot.mech { 1.0 } else { 0.0 },
+            segment_thickness: segment_plot.size,
+            hole_size: 1.0,
+            zoom: 1.0,
+            color: col_to_vec4(segment_plot.color),
+            inner_canvas_size_in_pixels: plot.canvas_size / (1.0 + plot.outer_border),
+            canvas_position: plot.canvas_position,
+        };
+
+        let segment_material_handle = segment_materials.add(segment_material);
+
+        commands
+            .spawn()
+
+            .insert_bundle(MaterialMesh2dBundle {
+                mesh: Mesh2dHandle(meshes.add(mesh)),
+                material: segment_material_handle.clone(),
+                transform: Transform::from_translation(plot.canvas_position.extend(1.11)),
+                ..Default::default()
+            })
+            .insert(plot_handle.clone());
+        // .insert();
+    }
+}
+
+// /// A marker component for colored 2d meshes
+// #[derive(Component, Default)]
+// pub(crate) struct SegmentMesh2d;
+
+/// Shader uniform parameters sent to segments shader
+#[derive(TypeUuid, Component, Clone, AsBindGroup, ShaderType)]
+#[uuid = "b3124a59-8d5c-41e0-9fff-6cb0b5ab010b"]
+pub(crate) struct SegmentUniform {
+    #[uniform(0)]
+    pub color: Vec4,
+    /// gives segments a mechanical joint look if > 0.5
+    #[uniform(0)]
+    pub mech: f32,
+    #[uniform(0)]
+    pub segment_thickness: f32,
+    /// unused
+    #[uniform(0)]
+    pub hole_size: f32,
+    #[uniform(0)]
+    pub zoom: f32,
+    #[uniform(0)]
+    pub inner_canvas_size_in_pixels: Vec2,
+    #[uniform(0)]
+    pub canvas_position: Vec2,
+}
+
+
+/// Plugin that renders [`SegmentMesh2d`]s
+pub(crate) struct SegmentMesh2dPlugin;
+
+pub(crate) struct SegmentShaderHandle(pub Handle<Shader>);
+
+pub const SEGMENT_SHADER_HANDLE: HandleUntyped = HandleUntyped::weak_from_u64(
+    bevy::render::render_resource::Shader::TYPE_UUID,
+    5493029648115043164,
+);
+
+const ATTRIBUTE_ENDS: MeshVertexAttribute =
+    MeshVertexAttribute::new("Ends", 335119774, VertexFormat::Float32x4);
+
+const ATTRIBUTE_CONTROL_POINT: MeshVertexAttribute =
+    MeshVertexAttribute::new("Vertext_Control", 465542875, VertexFormat::Float32x4);
+
+impl Plugin for SegmentMesh2dPlugin {
+    fn build(&self, app: &mut App) {
+        let mut shaders = app.world.get_resource_mut::<Assets<Shader>>().unwrap();
+
+        let handle_untyped = SEGMENT_SHADER_HANDLE.clone();
+
+        shaders.set_untracked(
+            handle_untyped.clone(),
+            Shader::from_wgsl(include_str!("segments.wgsl")),
+        );
+
+        app.add_plugin(Material2dPlugin::<SegmentUniform>::default());
+
+    }
+}
+
+impl bevy::sprite::Material2d for SegmentUniform {
+    fn vertex_shader() -> ShaderRef {
+        let handle_untyped = SEGMENT_SHADER_HANDLE.clone();
+        let shader_handle: Handle<Shader> = handle_untyped.typed::<Shader>();
+        shader_handle.into()
+    }
+    fn fragment_shader() -> ShaderRef {
+        let handle_untyped = SEGMENT_SHADER_HANDLE.clone();
+        let shader_handle: Handle<Shader> = handle_untyped.typed::<Shader>();
+        shader_handle.into()
+    }
+
+    fn specialize(
+        descriptor: &mut RenderPipelineDescriptor,
+        layout: &MeshVertexBufferLayout,
+        _key: Material2dKey<Self>,
+    ) -> Result<(), SpecializedMeshPipelineError> {
+        let vertex_layout = layout.get_layout(&[
+            Mesh::ATTRIBUTE_POSITION.at_shader_location(0),
+            // ATTRIBUTE_COLOR.at_shader_location(1),
+            ATTRIBUTE_ENDS.at_shader_location(1),
+            Mesh::ATTRIBUTE_UV_0.at_shader_location(2),
+            ATTRIBUTE_CONTROL_POINT.at_shader_location(3),
+        ])?;
+        descriptor.vertex.buffers = vec![vertex_layout];
+        Ok(())
+    }
+}

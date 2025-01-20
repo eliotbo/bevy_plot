@@ -56,9 +56,9 @@
 mod plot;
 pub use plot::*;
 
-mod bezier;
+// mod bezier;
 mod canvas;
 mod inputs;
-mod markers;
-mod segments;
+// mod markers;
+// mod segments;
 mod util;

@@ -3,21 +3,24 @@ pub mod canvas_actions;
 #[allow(unused_imports)]
 pub use canvas_actions::*;
 
-use bevy::{
-    ecs::system::{lifetimeless::SRes, SystemParamItem},
-    prelude::*,
-    reflect::TypeUuid,
-    render::{
-        render_asset::{PrepareAssetError, RenderAsset},
-        render_resource::{
-            std140::{AsStd140, Std140},
-            *,
-        },
-        renderer::RenderDevice,
-    },
-    sprite::Material2d,
-    sprite::Material2dPipeline,
-};
+// use bevy::{
+//     ecs::system::{lifetimeless::SRes, SystemParamItem},
+//     prelude::*,
+//     reflect::TypeUuid,
+//     render::{
+//         extract_resource::ExtractResource,
+//         render_asset::{PrepareAssetError, RenderAsset},
+//         render_resource::*,
+//         renderer::RenderDevice,
+//     },
+//     sprite::{Material2d, Material2dPipeline, Material2dPlugin},
+// };
+
+use bevy::prelude::*;
+use bevy::reflect::TypePath;
+use bevy::render::render_resource::AsBindGroup;
+use bevy::render::render_resource::*;
+use bevy::sprite::{Material2d, Material2dPlugin};
 
 use crate::plot::*;
 use crate::util::*;
@@ -28,9 +31,10 @@ pub(crate) struct PlotLabel;
 #[derive(Component)]
 pub(crate) struct TargetLabel;
 
+#[derive(Event)]
 pub(crate) struct SpawnGraphEvent {
     pub plot_handle: Handle<Plot>,
-    pub canvas: Canvas,
+    pub canvas: CanvasParams,
 }
 
 pub(crate) enum Corner {
@@ -50,7 +54,7 @@ pub(crate) struct ResizePlotWindow {
 }
 
 #[derive(Component, Clone)]
-pub(crate) struct Canvas {
+pub(crate) struct CanvasParams {
     pub position: Vec2,
     #[allow(dead_code)]
     pub previous_position: Vec2,
@@ -60,7 +64,7 @@ pub(crate) struct Canvas {
     pub hover_radius: f32,
 }
 
-impl Canvas {
+impl CanvasParams {
     pub(crate) fn within_rect(&self, position: Vec2) -> bool {
         let size = self.original_size * self.scale;
         if position.x < self.position.x + size.x / 2.0
@@ -73,12 +77,7 @@ impl Canvas {
         return false;
     }
 
-    pub(crate) fn clicked_on_plot_corner(
-        &self,
-        position: Vec2,
-        commands: &mut Commands,
-        entity: Entity,
-    ) {
+    pub(crate) fn clicked_on_plot_corner(&self, position: Vec2, commands: &mut Commands, entity: Entity) {
         let size = self.original_size * self.scale;
         let top_right = self.position + Vec2::new(size.x / 2.0, size.y / 2.0);
         let bottom_left = self.position + Vec2::new(-size.x / 2.0, -size.y / 2.0);
@@ -173,11 +172,13 @@ pub(crate) struct ZoomAxes {
     pub mouse_pos: Vec2,
 }
 
+#[derive(Event)]
 pub(crate) struct UpdatePlotLabelsEvent {
     pub plot_handle: Handle<Plot>,
     pub canvas_entity: Entity,
 }
 
+#[derive(Event)]
 pub(crate) struct UpdateTargetLabelEvent {
     pub plot_handle: Handle<Plot>,
     pub canvas_entity: Entity,
@@ -185,32 +186,47 @@ pub(crate) struct UpdateTargetLabelEvent {
     // pub mouse_pos: Vec2,
 }
 
-/// Canvas shader parameters
-#[derive(TypeUuid, Debug, Clone, Component, AsStd140)]
-#[uuid = "1e08866c-0b8a-437e-8bae-38844b21137e"]
-#[allow(non_snake_case)]
+#[derive(Asset, TypePath, AsBindGroup, Debug, Clone)]
 pub(crate) struct CanvasMaterial {
     /// Mouse position in the reference frame of the graph, corresponding to its axes coordinates
+    #[uniform(0)]
     pub mouse_pos: Vec2,
+    #[uniform(0)]
     pub tick_period: Vec2,
 
     /// Extreme points of the canvas
-    pub bounds: PlotCanvasBounds,
+    #[uniform(0)]
+    pub bound_up: Vec2,
+    #[uniform(0)]
+    pub bound_lo: Vec2,
 
+    #[uniform(0)]
     pub time: f32,
+    #[uniform(0)]
     pub zoom: f32,
+    #[uniform(0)]
     pub size: Vec2,
+    #[uniform(0)]
     pub outer_border: Vec2,
+    #[uniform(0)]
     pub position: Vec2,
+    #[uniform(0)]
     pub show_target: f32,
+    #[uniform(0)]
     pub hide_contour: f32,
+    #[uniform(0)]
     pub target_pos: Vec2,
 
+    #[uniform(0)]
     pub background_color1: Vec4,
+    #[uniform(0)]
     pub background_color2: Vec4,
+    #[uniform(0)]
     pub target_color: Vec4,
 
+    #[uniform(0)]
     pub show_grid: f32,
+    #[uniform(0)]
     pub show_axes: f32,
 }
 
@@ -219,7 +235,9 @@ impl CanvasMaterial {
         CanvasMaterial {
             mouse_pos: Vec2::ZERO,
             tick_period: plot.tick_period,
-            bounds: plot.bounds.clone(),
+            // bounds: plot.bounds.clone(),
+            bound_up: plot.bounds.up,
+            bound_lo: plot.bounds.lo,
             time: 0.0,
             zoom: 1.0,
             size: plot.canvas_size,
@@ -246,7 +264,9 @@ impl CanvasMaterial {
 
         self.position = plot.canvas_position;
         self.tick_period = plot.tick_period;
-        self.bounds = plot.bounds.clone();
+
+        self.bound_up = plot.bounds.up;
+        self.bound_lo = plot.bounds.lo;
         self.zoom = plot.zoom;
         self.time = plot.time;
         self.size = plot.canvas_size;
@@ -257,6 +277,7 @@ impl CanvasMaterial {
             0.0
         };
         self.target_pos = plot.to_local(plot.target_position) + plot.canvas_position;
+
         self.background_color1 = col_to_vec4(plot.background_color1);
         self.background_color2 = col_to_vec4(plot.background_color2);
         self.target_color = col_to_vec4(plot.target_color);
@@ -278,94 +299,18 @@ impl CanvasMaterial {
     }
 }
 
-#[derive(Clone)]
-pub(crate) struct GpuCanvasMaterial {
-    _buffer: Buffer,
-    bind_group: BindGroup,
-}
+// impl bevy::sprite::Material2d for CanvasMaterial {
+//     fn fragment_shader() -> ShaderRef {
+//         let handle_untyped = CANVAS_SHADER_HANDLE.clone();
+//         let shader_handle: Handle<Shader> = handle_untyped.typed::<Shader>();
+//         shader_handle.into()
+//     }
+// }
 
-pub(crate) struct CanvasMesh2dPlugin;
-
-pub const CANVAS_SHADER_HANDLE: HandleUntyped =
-    HandleUntyped::weak_from_u64(Shader::TYPE_UUID, 11248119131354745027);
-
-impl Plugin for CanvasMesh2dPlugin {
-    fn build(&self, app: &mut App) {
-        // let mut shaders = world.get_resource_mut::<Assets<Shader>>().unwrap();
-        let mut shaders = app.world.get_resource_mut::<Assets<Shader>>().unwrap();
-
-        let handle_untyped = CANVAS_SHADER_HANDLE.clone();
-
-        shaders.set_untracked(
-            handle_untyped.clone(),
-            Shader::from_wgsl(include_str!("canvas.wgsl")),
-        );
-
-        // // at the moment, there seems to be no way to include a font in the crate
-        // let mut fonts = app.world.get_resource_mut::<Assets<Font>>().unwrap();
-    }
-}
-
+// Use hot-reload from file OR inline your wgsl. If using a path:
 impl Material2d for CanvasMaterial {
-    fn fragment_shader(_asset_server: &AssetServer) -> Option<Handle<Shader>> {
-        let handle_untyped = CANVAS_SHADER_HANDLE.clone();
-        let shader_handle: Handle<Shader> = handle_untyped.typed::<Shader>();
-        Some(shader_handle)
-    }
-
-    fn bind_group(render_asset: &<Self as RenderAsset>::PreparedAsset) -> &BindGroup {
-        &render_asset.bind_group
-    }
-
-    fn bind_group_layout(render_device: &RenderDevice) -> BindGroupLayout {
-        render_device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            entries: &[BindGroupLayoutEntry {
-                binding: 0,
-                visibility: ShaderStages::FRAGMENT,
-                ty: BindingType::Buffer {
-                    ty: BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: BufferSize::new(CanvasMaterial::std140_size_static() as u64),
-                },
-                count: None,
-            }],
-            label: None,
-        })
-    }
-}
-
-impl RenderAsset for CanvasMaterial {
-    type ExtractedAsset = CanvasMaterial;
-    type PreparedAsset = GpuCanvasMaterial;
-    type Param = (SRes<RenderDevice>, SRes<Material2dPipeline<Self>>);
-    fn extract_asset(&self) -> Self::ExtractedAsset {
-        self.clone()
-    }
-
-    fn prepare_asset(
-        extracted_asset: Self::ExtractedAsset,
-        (render_device, material_pipeline): &mut SystemParamItem<Self::Param>,
-    ) -> Result<Self::PreparedAsset, PrepareAssetError<Self::ExtractedAsset>> {
-        let custom_material_std140 = extracted_asset.as_std140();
-        let custom_material_bytes = custom_material_std140.as_bytes();
-
-        let buffer = render_device.create_buffer_with_data(&BufferInitDescriptor {
-            contents: custom_material_bytes,
-            label: None,
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-        });
-        let bind_group = render_device.create_bind_group(&BindGroupDescriptor {
-            entries: &[BindGroupEntry {
-                binding: 0,
-                resource: buffer.as_entire_binding(),
-            }],
-            label: None,
-            layout: &material_pipeline.material2d_layout,
-        });
-
-        Ok(GpuCanvasMaterial {
-            _buffer: buffer,
-            bind_group,
-        })
+    fn fragment_shader() -> ShaderRef {
+        // For example if you keep canvas.wgsl in assets/canvas/canvas.wgsl:
+        "shaders/canvas.wgsl".into()
     }
 }

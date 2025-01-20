@@ -38,7 +38,7 @@ fn spawn_axis_tick_labels(
 
     let label_entity = commands
         .spawn_bundle(Text2dBundle {
-            text: Text::with_section(text, text_style.clone(), text_alignment),
+            text: Text::from_section(text, text_style.clone()).with_alignment(text_alignment),
             transform: Transform::from_translation(position),
             ..Default::default()
         })
@@ -71,7 +71,7 @@ pub(crate) fn update_target(
         let plot_handle = event.plot_handle.clone();
         let plot_entity = event.canvas_entity;
         // if let Some(plot) = materials.get_mut(plot_handle.clone()) {
-        if let Some(plot) = plots.get_mut(plot_handle.clone()) {
+        if let Some(plot) = plots.get_mut(&plot_handle.clone()) {
             //
             // update canvas shader
             if let Some(canvas_mat) = canvas_materials.get_mut(&event.canvas_material_handle) {
@@ -84,18 +84,14 @@ pub(crate) fn update_target(
 
                 let pos = plot.target_position;
 
-                let target_str_x =
-                    format_numeric_label(&plot, pos.x, pos.x > 1000.0 || pos.x < 0.01);
-                let target_str_y =
-                    format_numeric_label(&plot, pos.y, pos.y > 1000.0 || pos.y < 0.01);
+                let target_str_x = format_numeric_label(&plot, pos.x, pos.x > 1000.0 || pos.x < 0.01);
+                let target_str_y = format_numeric_label(&plot, pos.y, pos.y > 1000.0 || pos.y < 0.01);
 
                 let target_str = format!("({}, {})", target_str_x, target_str_y);
 
                 let offset = font_size * 0.2;
-                let mut target_position = plot
-                    .to_local(plot.target_position)
-                    .extend(target_text_z_plane)
-                    + Vec3::new(offset, offset, 0.0);
+                let mut target_position =
+                    plot.to_local(plot.target_position).extend(target_text_z_plane) + Vec3::new(offset, offset, 0.0);
 
                 // let font = asset_server.load("fonts/Roboto-Regular.ttf");
 
@@ -123,11 +119,7 @@ pub(crate) fn update_target(
                     {
                         let label_entity = commands
                             .spawn_bundle(Text2dBundle {
-                                text: Text::with_section(
-                                    target_str,
-                                    text_style.clone(),
-                                    text_alignment,
-                                ),
+                                text: Text::from_section(target_str, text_style.clone()).with_alignment(text_alignment),
                                 transform: Transform::from_translation(target_position),
                                 ..Default::default()
                             })
@@ -150,7 +142,7 @@ pub(crate) fn update_plot_labels(
     mut plots: ResMut<Assets<Plot>>,
     mut update_plot_labels_event: EventReader<UpdatePlotLabelsEvent>,
     plot_label_query: Query<Entity, With<PlotLabel>>,
-    mut canvas_query: Query<&mut Canvas>,
+    mut canvas_query: Query<&mut CanvasParams>,
 ) {
     // If there is a stack of UpdatePlotLabelsEvent, only read the first one.
     if let Some(font_handle) = maybe_font.maybe_font.as_ref() {
@@ -159,7 +151,7 @@ pub(crate) fn update_plot_labels(
 
             // if let Some(plot) = materials.get_mut(plot_handle.clone()) {
 
-            if let Some(plot) = plots.get_mut(plot_handle.clone()) {
+            if let Some(plot) = plots.get_mut(&plot_handle.clone()) {
                 if !plot.hide_tick_labels {
                     for entity in plot_label_query.iter() {
                         commands.entity(entity).despawn();
@@ -253,8 +245,7 @@ pub(crate) fn update_plot_labels(
                                     plot_entity,
                                     &x_str,
                                     font_size,
-                                    Vec2::new(x0 + x_pos + font_offset_x, center_dist_y)
-                                        .extend(text_z_plane),
+                                    Vec2::new(x0 + x_pos + font_offset_x, center_dist_y).extend(text_z_plane),
                                     VerticalAlign::Top,
                                     HorizontalAlign::Right,
                                     plot.tick_label_color,
@@ -331,8 +322,7 @@ pub(crate) fn update_plot_labels(
                                     plot_entity,
                                     &y_str,
                                     font_size,
-                                    Vec2::new(center_dist_x, y0 + y_pos + font_offset_y)
-                                        .extend(0.0001),
+                                    Vec2::new(center_dist_x, y0 + y_pos + font_offset_y).extend(0.0001),
                                     VerticalAlign::Top,
                                     HorizontalAlign::Left,
                                     plot.tick_label_color,
@@ -377,23 +367,40 @@ pub(crate) fn spawn_graph(
 ) {
     for event in spawn_graph_event.iter() {
         let plot_handle = event.plot_handle.clone();
-        let plot = plots.get(plot_handle.clone()).unwrap();
+        let plot = plots.get(&plot_handle.clone()).unwrap();
 
         let material = CanvasMaterial::new(&plot);
 
         let canvas_material_handle = materials.add(material);
 
-        // quad
+        // // quad
+        // let plot_entity = commands
+        //     .spawn()
+        //     .insert_bundle(MaterialMesh2dBundle {
+        //         mesh: Mesh2dHandle(meshes.add(Mesh::from(shape::Quad::new(plot.canvas_size)))),
+        //         material: canvas_material_handle.clone(),
+        //         transform: Transform::from_translation(plot.canvas_position.extend(0.0001)),
+        //         ..Default::default()
+        //     })
+        //     .insert(event.canvas.clone())
+        //     .insert(event.plot_handle.clone())
+        //     .id();
+
+        // In 0.15, we use the Mesh2d / MeshMaterial2d components.
         let plot_entity = commands
-            .spawn()
-            .insert_bundle(MaterialMesh2dBundle {
-                mesh: Mesh2dHandle(meshes.add(Mesh::from(shape::Quad::new(plot.canvas_size)))),
-                material: canvas_material_handle.clone(),
-                transform: Transform::from_translation(plot.canvas_position.extend(0.0001)),
-                ..Default::default()
-            })
-            .insert(event.canvas.clone())
-            .insert(event.plot_handle.clone())
+            .spawn((
+                // The quad itself
+                Mesh2dHandle(meshes.add(Mesh::from(shape::Quad::new(plot.canvas_size)))),
+                // Our custom material
+                MeshMaterial2d(canvas_material_handle.clone()),
+                // Basic transform
+                Transform::from_translation(plot.canvas_position.extend(0.0001)),
+                GlobalTransform::default(),
+                // Our custom component
+                event.canvas.clone(),
+                // This handle so we can track the Plot asset
+                plot_handle.clone(),
+            ))
             .id();
 
         wait_for_update_labels_event.send(WaitForUpdatePlotLabelsEvent {
@@ -407,16 +414,12 @@ pub(crate) fn spawn_graph(
         });
 
         // spawn each analytical curve
-        plot.data
-            .bezier_groups
-            .iter()
-            .enumerate()
-            .for_each(|(k, _)| {
-                spawn_beziercurve_event.send(SpawnBezierCurveEvent {
-                    group_number: k,
-                    plot_handle: plot_handle.clone(),
-                })
-            });
+        plot.data.bezier_groups.iter().enumerate().for_each(|(k, _)| {
+            spawn_beziercurve_event.send(SpawnBezierCurveEvent {
+                group_number: k,
+                plot_handle: plot_handle.clone(),
+            })
+        });
     }
 }
 fn format_numeric_label(plot: &Plot, label: f32, scientific_notation: bool) -> String {
@@ -461,8 +464,7 @@ pub(crate) fn update_mouse_target(
                     if canvas_material.within_rect(cursor.position) {
                         //
                         plot.target_position = plot.world_to_plot(cursor.position);
-                        canvas_material.mouse_pos =
-                            plot.to_local(plot.target_position) + plot.canvas_position;
+                        canvas_material.mouse_pos = plot.to_local(plot.target_position) + plot.canvas_position;
 
                         update_target_labels_event.send(UpdateTargetLabelEvent {
                             plot_handle: plot_handle.clone(),
@@ -479,7 +481,7 @@ pub(crate) fn update_mouse_target(
 pub(crate) fn change_plot(
     mut commands: Commands,
     mut my_plots: ResMut<Assets<Plot>>,
-    canvas_query: Query<(Entity, &Canvas, &Handle<Plot>, &mut Handle<CanvasMaterial>)>,
+    canvas_query: Query<(Entity, &CanvasParams, &Handle<Plot>, &mut Handle<CanvasMaterial>)>,
 
     keyboard_input: Res<Input<KeyCode>>,
     cursor: Res<Cursor>,
@@ -556,12 +558,12 @@ pub(crate) fn change_plot(
 
 pub(crate) fn release_all(
     mut commands: Commands,
-    mut query2: Query<(Entity, &mut Canvas), With<ResizePlotWindow>>,
+    mut query2: Query<(Entity, &mut CanvasParams), With<ResizePlotWindow>>,
     query3: Query<Entity, With<MoveAxes>>,
     mut release_all_event: EventReader<ReleaseAllEvent>,
     mut windows: ResMut<Windows>,
 ) {
-    for _ in release_all_event.iter() {
+    for _ in release_all_event.read() {
         for (entity, mut graph_sprite) in query2.iter_mut() {
             commands.entity(entity).remove::<ResizePlotWindow>();
             graph_sprite.previous_scale = graph_sprite.scale;
@@ -578,23 +580,25 @@ pub(crate) fn adjust_graph_size(
     mut canvas_query: Query<
         (
             Entity,
-            &mut Canvas,
+            &mut CanvasParams,
             &Handle<Plot>,
+            &Handle<CanvasMaterial>,
             &ResizePlotWindow,
             &mut Transform,
         ),
         Without<Locked>,
     >,
     mut my_canvas_mat: ResMut<Assets<CanvasMaterial>>,
+    mut plots: ResMut<Assets<Plot>>,
     cursor: Res<Cursor>,
     mut update_labels_event: EventWriter<UpdatePlotLabelsEvent>,
 ) {
-    for (canvas_entity, mut graph_sprite, plot_handle, resize_corner, mut transform) in
+    for (canvas_entity, mut graph_sprite, plot_handle, mat_handle, resize_corner, mut transform) in
         canvas_query.iter_mut()
     {
         //
 
-        if let Some(plot) = my_canvas_mat.get_mut(plot_handle) {
+        if let Some(canvas_material) = my_canvas_mat.get_mut(mat_handle) {
             let delta = cursor.pos_relative_to_click;
             let mut new_transform_scale;
 
@@ -643,12 +647,16 @@ pub(crate) fn adjust_graph_size(
 
             graph_sprite.scale = transform.scale.truncate();
 
-            plot.size = graph_sprite.scale * graph_sprite.original_size;
+            canvas_material.size = graph_sprite.scale * graph_sprite.original_size;
 
             update_labels_event.send(UpdatePlotLabelsEvent {
                 plot_handle: plot_handle.clone(),
                 canvas_entity,
             });
+
+            if let Some(plot) = plots.get_mut(plot_handle) {
+                plot.canvas_size = canvas_material.size;
+            }
         }
     }
 }
@@ -656,35 +664,10 @@ pub(crate) fn adjust_graph_size(
 pub(crate) fn adjust_graph_axes(
     mut commands: Commands,
     mut query: ParamSet<(
-        Query<
-            (Entity, &Canvas, &Handle<Plot>, &Handle<CanvasMaterial>),
-            (With<MoveAxes>, Without<Locked>),
-        >,
-        Query<
-            (
-                Entity,
-                &Canvas,
-                &Handle<Plot>,
-                &Handle<CanvasMaterial>,
-                &ZoomAxes,
-            ),
-            Without<Locked>,
-        >,
+        Query<(Entity, &CanvasParams, &Handle<Plot>, &Handle<CanvasMaterial>), (With<MoveAxes>, Without<Locked>)>,
+        Query<(Entity, &CanvasParams, &Handle<Plot>, &Handle<CanvasMaterial>, &ZoomAxes), Without<Locked>>,
     )>,
-    // mut query0: Query<
-    //     (Entity, &Canvas, &Handle<Plot>, &Handle<CanvasMaterial>),
-    //     (With<MoveAxes>, Without<Locked>),
-    // >,
-    // mut query1: Query<
-    //     (
-    //         Entity,
-    //         &Canvas,
-    //         &Handle<Plot>,
-    //         &Handle<CanvasMaterial>,
-    //         &ZoomAxes,
-    //     ),
-    //     Without<Locked>,
-    // >,
+
     mut plots: ResMut<Assets<Plot>>,
 
     mut mouse_motion_events: EventReader<MouseMotion>,
@@ -693,10 +676,7 @@ pub(crate) fn adjust_graph_axes(
     mut update_target_labels_event: EventWriter<UpdateTargetLabelEvent>,
     mut spawn_beziercurve_event: EventWriter<SpawnBezierCurveEvent>,
 ) {
-    let delta_pixels_vec = mouse_motion_events
-        .iter()
-        .map(|e| e.delta)
-        .collect::<Vec<Vec2>>();
+    let delta_pixels_vec = mouse_motion_events.iter().map(|e| e.delta).collect::<Vec<Vec2>>();
     let delta_pixels = delta_pixels_vec.iter().fold(Vec2::ZERO, |acc, x| acc + *x);
 
     // when axes have been moved, respawn the data
@@ -704,6 +684,8 @@ pub(crate) fn adjust_graph_axes(
         for (canvas_entity, _graph_sprite, plot_handle, material_handle) in query.p0().iter_mut() {
             if let Some(plot) = plots.get_mut(plot_handle) {
                 plot.move_axes(delta_pixels);
+
+                plot.compute_zeros();
 
                 update_plot_labels_event.send(UpdatePlotLabelsEvent {
                     plot_handle: plot_handle.clone(),
@@ -721,36 +703,30 @@ pub(crate) fn adjust_graph_axes(
                     // canvas_material_handle: material_handle.clone(),
                 });
 
-                plot.data
-                    .bezier_groups
-                    .iter()
-                    .enumerate()
-                    .for_each(|(k, _)| {
-                        let bezier_curve = plot.data.bezier_groups.get(k).unwrap();
-                        // So as to not spawn twice when show_animation is turned on
-                        if !bezier_curve.show_animation {
-                            spawn_beziercurve_event.send(SpawnBezierCurveEvent {
-                                group_number: k,
-                                plot_handle: plot_handle.clone(),
-                            })
-                        }
-                    });
-
-                // }
+                plot.data.bezier_groups.iter().enumerate().for_each(|(k, _)| {
+                    let bezier_curve = plot.data.bezier_groups.get(k).unwrap();
+                    // So as to not spawn twice when show_animation is turned on
+                    if !bezier_curve.show_animation {
+                        spawn_beziercurve_event.send(SpawnBezierCurveEvent {
+                            group_number: k,
+                            plot_handle: plot_handle.clone(),
+                        })
+                    }
+                });
             }
         }
     }
 
     // zoom axes using mouse scroll
-    for (canvas_entity, _graph_sprite, plot_handle, material_handle, zoom_info) in
-        query.p1().iter_mut()
-    {
+    for (canvas_entity, _graph_sprite, plot_handle, material_handle, zoom_info) in query.p1().iter_mut() {
         //
         if let Some(plot) = plots.get_mut(plot_handle) {
             //
             plot.zoom_axes(zoom_info.wheel_dir);
 
             plot.clamp_tick_period();
+
+            plot.compute_zeros();
 
             update_plot_labels_event.send(UpdatePlotLabelsEvent {
                 plot_handle: plot_handle.clone(),
@@ -763,20 +739,16 @@ pub(crate) fn adjust_graph_axes(
                 canvas_material_handle: material_handle.clone(),
             });
 
-            plot.data
-                .bezier_groups
-                .iter()
-                .enumerate()
-                .for_each(|(k, _)| {
-                    let bezier_curve = plot.data.bezier_groups.get(k).unwrap();
-                    // So as to not spawn twice when show_animation is turned on
-                    if !bezier_curve.show_animation {
-                        spawn_beziercurve_event.send(SpawnBezierCurveEvent {
-                            group_number: k,
-                            plot_handle: plot_handle.clone(),
-                        })
-                    }
-                });
+            plot.data.bezier_groups.iter().enumerate().for_each(|(k, _)| {
+                let bezier_curve = plot.data.bezier_groups.get(k).unwrap();
+                // So as to not spawn twice when show_animation is turned on
+                if !bezier_curve.show_animation {
+                    spawn_beziercurve_event.send(SpawnBezierCurveEvent {
+                        group_number: k,
+                        plot_handle: plot_handle.clone(),
+                    })
+                }
+            });
         }
 
         commands.entity(canvas_entity).remove::<ZoomAxes>();
