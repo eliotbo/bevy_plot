@@ -372,7 +372,7 @@ pub(crate) fn spawn_graph(
     mut commands: Commands,
     mut spawn_graph_event: EventReader<SpawnGraphEvent>,
     mut materials: ResMut<Assets<CanvasMaterial>>,
-    plots: ResMut<PlotMap>,
+    mut plots: ResMut<PlotMap>,
 
     mut meshes: ResMut<Assets<Mesh>>,
 
@@ -385,49 +385,50 @@ pub(crate) fn spawn_graph(
     for event in spawn_graph_event.read() {
         let plot_id = event.plot_id;
 
-        let plot = plots.plots.get(&plot_id).unwrap();
+        if let Some(plot) = plots.plots.get_mut(&plot_id) {
+            let material = CanvasMaterial::new(&plot);
+            // let material = CanvasMaterial::new(&plot);
 
-        let material = CanvasMaterial::new(&plot);
+            let canvas_material_handle = materials.add(material);
 
-        let canvas_material_handle = materials.add(material);
+            // In 0.15, we use the Mesh2d / MeshMaterial2d components.
+            let plot_entity = commands
+                .spawn((
+                    // The quad itself
+                    // Mesh2dHandle(meshes.add(Mesh::from(shape::Quad::new(plot.canvas_size)))),
+                    Mesh2d(meshes.add(Mesh::from(bevy::math::prelude::Rectangle::from_size(plot.canvas_size)))),
+                    // Our custom material
+                    MeshMaterial2d(canvas_material_handle.clone()),
+                    // Basic transform
+                    Transform::from_translation(plot.canvas_position.extend(0.0001)),
+                    GlobalTransform::default(),
+                    // Our custom component
+                    event.canvas.clone(),
+                    // MAYBE THIS NEEDS TO BE A COMPONENT. it's just a type alias for a u32 right now
+                    PlotIdComponent(plot_id),
+                ))
+                .id();
 
-        // In 0.15, we use the Mesh2d / MeshMaterial2d components.
-        let plot_entity = commands
-            .spawn((
-                // The quad itself
-                // Mesh2dHandle(meshes.add(Mesh::from(shape::Quad::new(plot.canvas_size)))),
-                Mesh2d(meshes.add(Mesh::from(bevy::math::prelude::Rectangle::from_size(plot.canvas_size)))),
-                // Our custom material
-                MeshMaterial2d(canvas_material_handle.clone()),
-                // Basic transform
-                Transform::from_translation(plot.canvas_position.extend(0.0001)),
-                GlobalTransform::default(),
-                // Our custom component
-                event.canvas.clone(),
-                // MAYBE THIS NEEDS TO BE A COMPONENT. it's just a type alias for a u32 right now
-                PlotIdComponent(plot_id),
-            ))
-            .id();
+            plot.entity = Some(plot_entity);
 
-        plots.plots.get_mut(&plot_id).unwrap().entity = Some(plot_entity);
+            wait_for_update_labels_event.send(WaitForUpdatePlotLabelsEvent {
+                quad_entity: plot_entity.clone(),
+                plot_id: plot_id,
+            });
 
-        wait_for_update_labels_event.send(WaitForUpdatePlotLabelsEvent {
-            quad_entity: plot_entity.clone(),
-            plot_id: plot_id,
-        });
+            change_canvas_material_event.send(RespawnAllEvent {
+                // canvas_material_handle: canvas_material_handle.clone(),
+                plot_id,
+            });
 
-        change_canvas_material_event.send(RespawnAllEvent {
-            // canvas_material_handle: canvas_material_handle.clone(),
-            plot_id,
-        });
-
-        // // spawn each analytical curve
-        // plot.data.bezier_groups.iter().enumerate().for_each(|(k, _)| {
-        //     spawn_beziercurve_event.send(SpawnBezierCurveEvent {
-        //         group_number: k,
-        //         plot_id,
-        //     })
-        // });
+            // // spawn each analytical curve
+            // plot.data.bezier_groups.iter().enumerate().for_each(|(k, _)| {
+            //     spawn_beziercurve_event.send(SpawnBezierCurveEvent {
+            //         group_number: k,
+            //         plot_id,
+            //     })
+            // });
+        }
     }
 }
 fn format_numeric_label(plot: &Plot, label: f32, scientific_notation: bool) -> String {
@@ -454,7 +455,7 @@ pub(crate) fn update_mouse_target(
 
     cursor: Res<Cursor>,
     mouse_button_input: Res<ButtonInput<MouseButton>>,
-    plots: Res<PlotMap>,
+    mut plots: ResMut<PlotMap>,
 ) {
     if mouse_button_input.pressed(MouseButton::Middle) {
         for (canvas_entity, mut canvas_material, plot_id_component) in &mut canvas_query {
@@ -462,7 +463,7 @@ pub(crate) fn update_mouse_target(
             // if let Some(plot) = my_canvas_mat.get_mut(plot_handle) {
 
             let plot_id = plot_id_component.0;
-            let plot = plots.plots.get(&plot_id).unwrap();
+            let plot = plots.plots.get_mut(&plot_id).unwrap();
 
             if let Some(canvas_material_instance) = my_canvas_mats.get_mut(&canvas_material.0) {
                 plot.compute_zeros();
@@ -478,7 +479,7 @@ pub(crate) fn update_mouse_target(
                     update_target_labels_event.send(UpdateTargetLabelEvent {
                         plot_id: plot.id, // Assuming `plot.id` is a unique identifier
                         canvas_entity,
-                        canvas_material_handle: canvas_material.0.clone(),
+                        canvas_material_handle: canvas_material.clone(),
                     });
                 }
             }
@@ -526,49 +527,49 @@ pub(crate) fn change_plot(
     mut release_all_event: EventWriter<ReleaseAllEvent>,
     mut update_plot_labels_event: EventWriter<UpdatePlotLabelsEvent>,
     mut update_target_labels_event: EventWriter<UpdateTargetLabelEvent>,
-    mut window: Single<&Window>,
+    window: Single<Entity, With<Window>>,
 ) {
-    for (canvas_entity, graph_sprite, plot_handle, canvas_material_handle) in canvas_query.iter() {
+    for (canvas_entity, graph_sprite, plot_id, canvas_material_handle) in canvas_query.iter() {
         //
-        if let Some(plot) = my_plots.get_mut(plot_handle) {
+        if let Some(plot) = my_plots.get_mut(&plot_id.0) {
             plot.plot_coord_mouse_pos = plot.world_to_plot(cursor.position);
 
-            graph_sprite.hovered_on_plot_edges(cursor.position, &mut windows);
+            graph_sprite.hovered_on_plot_edges(cursor.position, *window, &mut commands);
 
-            for event in mouse_motion_events.iter() {
+            for event in mouse_motion_events.read() {
                 //
                 // When pressing P and moving the mouse, the tick period changes
-                if keyboard_input.pressed(KeyCode::P) {
+                if keyboard_input.pressed(KeyCode::KeyP) {
                     plot.tick_period.x *= 1.0 + (event.delta.x) / 1000.0;
                     plot.tick_period.y *= 1.0 + (event.delta.y) / 1000.0;
 
                     plot.clamp_tick_period();
 
                     update_plot_labels_event.send(UpdatePlotLabelsEvent {
-                        plot_id: plot_handle.clone(),
+                        plot_id: plot_id.0,
                         canvas_entity,
                     });
                     update_target_labels_event.send(UpdateTargetLabelEvent {
-                        plot_id: plot_handle.clone(),
+                        plot_id: plot_id.0,
                         canvas_entity,
                         canvas_material_handle: canvas_material_handle.clone(),
                     });
                 }
             }
 
-            for wheel_event in mouse_wheel_events.iter() {
+            for wheel_event in mouse_wheel_events.read() {
                 commands.entity(canvas_entity).insert(ZoomAxes {
                     wheel_dir: wheel_event.y,
                     mouse_pos: cursor.position,
                 });
 
                 update_plot_labels_event.send(UpdatePlotLabelsEvent {
-                    plot_id: plot_handle.clone(),
+                    plot_id: plot_id.0,
                     canvas_entity,
                 });
 
                 update_target_labels_event.send(UpdateTargetLabelEvent {
-                    plot_id: plot_handle.clone(),
+                    plot_id: plot_id.0,
                     canvas_entity,
                     canvas_material_handle: canvas_material_handle.clone(),
                 });
@@ -595,7 +596,7 @@ pub(crate) fn release_all(
     mut query2: Query<(Entity, &mut CanvasParams), With<ResizePlotWindow>>,
     query3: Query<Entity, With<MoveAxes>>,
     mut release_all_event: EventReader<ReleaseAllEvent>,
-    mut windows: ResMut<Windows>,
+    mut window_entity: Single<Entity, With<Window>>,
 ) {
     for _ in release_all_event.read() {
         for (entity, mut graph_sprite) in query2.iter_mut() {
@@ -605,8 +606,11 @@ pub(crate) fn release_all(
         for entity in query3.iter() {
             commands.entity(entity).remove::<MoveAxes>();
         }
-        let window = windows.get_primary_mut().unwrap();
-        window.set_cursor_icon(CursorIcon::Default);
+        // let window = window.get_primary_mut().unwrap();
+        // window.set_cursor_icon(CursorIcon::Default);
+        commands
+            .entity(*window_entity)
+            .insert(CursorIcon::System(SystemCursorIcon::Default));
     }
 }
 
@@ -615,19 +619,19 @@ pub(crate) fn adjust_graph_size(
         (
             Entity,
             &mut CanvasParams,
-            &Handle<Plot>,
-            &Handle<CanvasMaterial>,
+            &PlotIdComponent,
+            &MeshMaterial2d<CanvasMaterial>,
             &ResizePlotWindow,
             &mut Transform,
         ),
         Without<Locked>,
     >,
     mut my_canvas_mat: ResMut<Assets<CanvasMaterial>>,
-    mut plots: ResMut<Assets<Plot>>,
+    mut plots: ResMut<PlotMap>,
     cursor: Res<Cursor>,
     mut update_labels_event: EventWriter<UpdatePlotLabelsEvent>,
 ) {
-    for (canvas_entity, mut graph_sprite, plot_handle, mat_handle, resize_corner, mut transform) in &mut canvas_query {
+    for (canvas_entity, mut graph_sprite, plot_id_comp, mat_handle, resize_corner, mut transform) in &mut canvas_query {
         //
 
         if let Some(canvas_material) = my_canvas_mat.get_mut(mat_handle) {
@@ -682,11 +686,11 @@ pub(crate) fn adjust_graph_size(
             canvas_material.size = graph_sprite.scale * graph_sprite.original_size;
 
             update_labels_event.send(UpdatePlotLabelsEvent {
-                plot_id: plot_handle.clone(),
+                plot_id: plot_id_comp.0,
                 canvas_entity,
             });
 
-            if let Some(plot) = plots.get_mut(plot_handle) {
+            if let Some(plot) = plots.get_mut(&plot_id_comp.0) {
                 plot.canvas_size = canvas_material.size;
             }
         }
@@ -696,63 +700,75 @@ pub(crate) fn adjust_graph_size(
 pub(crate) fn adjust_graph_axes(
     mut commands: Commands,
     mut query: ParamSet<(
-        Query<(Entity, &CanvasParams, &Handle<Plot>, &Handle<CanvasMaterial>), (With<MoveAxes>, Without<Locked>)>,
-        Query<(Entity, &CanvasParams, &Handle<Plot>, &Handle<CanvasMaterial>, &ZoomAxes), Without<Locked>>,
+        Query<
+            (Entity, &CanvasParams, &PlotIdComponent, &MeshMaterial2d<CanvasMaterial>),
+            (With<MoveAxes>, Without<Locked>),
+        >,
+        Query<
+            (
+                Entity,
+                &CanvasParams,
+                &PlotIdComponent,
+                &MeshMaterial2d<CanvasMaterial>,
+                &ZoomAxes,
+            ),
+            Without<Locked>,
+        >,
     )>,
 
-    mut plots: ResMut<Assets<Plot>>,
+    mut plots: ResMut<PlotMap>,
 
     mut mouse_motion_events: EventReader<MouseMotion>,
     mut update_plot_labels_event: EventWriter<UpdatePlotLabelsEvent>,
     mut change_canvas_material_event: EventWriter<RespawnAllEvent>,
     mut update_target_labels_event: EventWriter<UpdateTargetLabelEvent>,
-    mut spawn_beziercurve_event: EventWriter<SpawnBezierCurveEvent>,
+    // mut spawn_beziercurve_event: EventWriter<SpawnBezierCurveEvent>,
 ) {
-    let delta_pixels_vec = mouse_motion_events.iter().map(|e| e.delta).collect::<Vec<Vec2>>();
+    let delta_pixels_vec = mouse_motion_events.read().map(|e| e.delta).collect::<Vec<Vec2>>();
     let delta_pixels = delta_pixels_vec.iter().fold(Vec2::ZERO, |acc, x| acc + *x);
 
     // when axes have been moved, respawn the data
     if delta_pixels != Vec2::ZERO {
-        for (canvas_entity, _graph_sprite, plot_handle, material_handle) in query.p0().iter_mut() {
-            if let Some(plot) = plots.get_mut(plot_handle) {
+        for (canvas_entity, _graph_sprite, plot_id_comp, material_handle) in query.p0().iter_mut() {
+            if let Some(plot) = plots.get_mut(&plot_id_comp.0) {
                 plot.move_axes(delta_pixels);
 
                 plot.compute_zeros();
 
                 update_plot_labels_event.send(UpdatePlotLabelsEvent {
-                    plot_id: plot_handle.clone(),
+                    plot_id: plot_id_comp.0,
                     canvas_entity,
                 });
 
                 update_target_labels_event.send(UpdateTargetLabelEvent {
-                    plot_id: plot_handle.clone(),
+                    plot_id: plot_id_comp.0,
                     canvas_entity,
                     canvas_material_handle: material_handle.clone(),
                 });
 
                 change_canvas_material_event.send(RespawnAllEvent {
-                    plot_id: plot_handle.clone(),
+                    plot_id: plot_id_comp.0,
                     // canvas_material_handle: material_handle.clone(),
                 });
 
-                plot.data.bezier_groups.iter().enumerate().for_each(|(k, _)| {
-                    let bezier_curve = plot.data.bezier_groups.get(k).unwrap();
-                    // So as to not spawn twice when show_animation is turned on
-                    if !bezier_curve.show_animation {
-                        spawn_beziercurve_event.send(SpawnBezierCurveEvent {
-                            group_number: k,
-                            plot_handle: plot_handle.clone(),
-                        })
-                    }
-                });
+                // plot.data.bezier_groups.iter().enumerate().for_each(|(k, _)| {
+                //     let bezier_curve = plot.data.bezier_groups.get(k).unwrap();
+                //     // So as to not spawn twice when show_animation is turned on
+                //     if !bezier_curve.show_animation {
+                //         spawn_beziercurve_event.send(SpawnBezierCurveEvent {
+                //             group_number: k,
+                //             plot_handle: plot_handle.clone(),
+                //         })
+                //     }
+                // });
             }
         }
     }
 
     // zoom axes using mouse scroll
-    for (canvas_entity, _graph_sprite, plot_handle, material_handle, zoom_info) in query.p1().iter_mut() {
+    for (canvas_entity, _graph_sprite, plot_id_comp, material_handle, zoom_info) in query.p1().iter_mut() {
         //
-        if let Some(plot) = plots.get_mut(plot_handle) {
+        if let Some(plot) = plots.get_mut(&plot_id_comp.0) {
             //
             plot.zoom_axes(zoom_info.wheel_dir);
 
@@ -761,32 +777,32 @@ pub(crate) fn adjust_graph_axes(
             plot.compute_zeros();
 
             update_plot_labels_event.send(UpdatePlotLabelsEvent {
-                plot_id: plot_handle.clone(),
+                plot_id: plot_id_comp.0,
                 canvas_entity,
             });
 
             update_target_labels_event.send(UpdateTargetLabelEvent {
-                plot_id: plot_handle.clone(),
+                plot_id: plot_id_comp.0,
                 canvas_entity,
                 canvas_material_handle: material_handle.clone(),
             });
 
-            plot.data.bezier_groups.iter().enumerate().for_each(|(k, _)| {
-                let bezier_curve = plot.data.bezier_groups.get(k).unwrap();
-                // So as to not spawn twice when show_animation is turned on
-                if !bezier_curve.show_animation {
-                    spawn_beziercurve_event.send(SpawnBezierCurveEvent {
-                        group_number: k,
-                        plot_handle: plot_handle.clone(),
-                    })
-                }
-            });
+            // plot.data.bezier_groups.iter().enumerate().for_each(|(k, _)| {
+            //     let bezier_curve = plot.data.bezier_groups.get(k).unwrap();
+            //     // So as to not spawn twice when show_animation is turned on
+            //     if !bezier_curve.show_animation {
+            //         spawn_beziercurve_event.send(SpawnBezierCurveEvent {
+            //             group_number: k,
+            //             plot_handle: plot_id_comp.clone(),
+            //         })
+            //     }
+            // });
         }
 
         commands.entity(canvas_entity).remove::<ZoomAxes>();
 
         change_canvas_material_event.send(RespawnAllEvent {
-            plot_id: plot_handle.clone(),
+            plot_id: plot_id_comp.0,
             // canvas_material_handle: material_handle.clone(),
         });
     }

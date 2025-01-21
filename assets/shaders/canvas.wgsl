@@ -1,25 +1,28 @@
 
-#import bevy_sprite::mesh2d_types
-#import bevy_sprite::mesh2d_view_types
+// #import bevy_sprite::mesh2d_types
+// #import bevy_sprite::mesh2d_view_types
 
-struct Vertex {
-    @location(0) position: vec3<f32>,
-    @location(1) normal: vec3<f32>,
-    @location(2) uv: vec2<f32>,
-#ifdef VERTEX_TANGENTS
-    @location(3) tangent: vec4<f32>,
-#endif
-};
+#import bevy_sprite::mesh2d_vertex_output::VertexOutput
+#import bevy_render::view::View
 
-struct VertexOutput {
-    @builtin(position) clip_position: vec4<f32>,
-    @location(0) world_position: vec4<f32>,
-    @location(1) world_normal: vec3<f32>,
-    @location(2) uv: vec2<f32>,
-#ifdef VERTEX_TANGENTS
-    @location(3) world_tangent: vec4<f32>,
-#endif
-};
+// struct Vertex {
+//     @location(0) position: vec3<f32>,
+//     @location(1) normal: vec3<f32>,
+//     @location(2) uv: vec2<f32>,
+// #ifdef VERTEX_TANGENTS
+//     @location(3) tangent: vec4<f32>,
+// #endif
+// };
+
+// struct VertexOutput {
+//     @builtin(position) clip_position: vec4<f32>,
+//     @location(0) world_position: vec4<f32>,
+//     @location(1) world_normal: vec3<f32>,
+//     @location(2) uv: vec2<f32>,
+// #ifdef VERTEX_TANGENTS
+//     @location(3) world_tangent: vec4<f32>,
+// #endif
+// };
 
 
 struct GraphEditShader {
@@ -45,16 +48,26 @@ struct GraphEditShader {
 @group(0) @binding(0)
 var<uniform> view: View;
 
-@group(1) @binding(0)
+@group(2) @binding(0)
 var<uniform> mate: GraphEditShader;
 
-@group(2) @binding(0)
-var<uniform> mesh: Mesh2d;
+// @group(2) @binding(0)
+// var<uniform> mesh: Mesh2d;
 
 // struct VertexOutput {
 //     @builtin(position) clip_position: vec4<f32>,
 //     @location(0) uv: vec2<f32>,
 // };
+
+struct Vertex {
+    @location(0) position: vec3<f32>,
+    @location(1) normal: vec3<f32>,
+    @location(2) uv: vec2<f32>,
+#ifdef VERTEX_TANGENTS
+    @location(3) tangent: vec4<f32>,
+#endif
+};
+
 
 struct Segment {
     start: vec2<f32>,
@@ -95,40 +108,30 @@ struct Globals {
 
 @vertex
 fn vertex(vertex: Vertex) -> VertexOutput {
-    let world_position = mesh.model * vec4<f32>(vertex.position, 1.0);
-
     var out: VertexOutput;
-    out.uv = world_position.xy;
+    let world_position = vec4<f32>(vertex.position, 1.0);
+    let view_proj = view.clip_from_view * view.view_from_world;
+    out.position = view_proj * world_position;
+    out.world_position = world_position;
+    out.world_normal = vertex.normal;
     out.uv = vertex.uv;
-    // out.world_position = world_position;
-    out.clip_position = view.view_proj * world_position;
-    out.world_normal = mat3x3<f32>(
-        mesh.inverse_transpose_model[0].xyz,
-        mesh.inverse_transpose_model[1].xyz,
-        mesh.inverse_transpose_model[2].xyz
-    ) * vertex.normal;
+    
 #ifdef VERTEX_TANGENTS
-    out.world_tangent = vec4<f32>(
-        mat3x3<f32>(
-            mesh.model[0].xyz,
-            mesh.model[1].xyz,
-            mesh.model[2].xyz
-        ) * vertex.tangent.xyz,
-        vertex.tangent.w
-    );
+    out.world_tangent = vec4<f32>(vertex.tangent.xyz, vertex.tangent.w);
 #endif
+
     return out;
 }
 
-struct FragmentInput {
-    @builtin(front_facing) is_front: bool,
-    @location(0) world_position: vec4<f32>,
-    @location(1) world_normal: vec3<f32>,
-    @location(2) uv: vec2<f32>,
-#ifdef VERTEX_TANGENTS
-    @location(3) world_tangent: vec4<f32>,
-#endif
-};
+// struct FragmentInput {
+//     @builtin(front_facing) is_front: bool,
+//     @location(0) world_position: vec4<f32>,
+//     @location(1) world_normal: vec3<f32>,
+//     @location(2) uv: vec2<f32>,
+// #ifdef VERTEX_TANGENTS
+//     @location(3) world_tangent: vec4<f32>,
+// #endif
+// };
 
 fn from_pix_to_local(uv_orig: vec2<f32>) -> vec2<f32> {
 
@@ -235,19 +238,27 @@ fn from_local_to_pixels3(uv_local: vec2<f32>) -> vec2<f32> {
 //     return uv;
 // }
 
-// There are currently no function for x % 2 in wgpu
-fn even(uv: f32) -> f32 {
-    var tempo: f32 = 0.0;
-    let whatever = modf(uv + 1.0, &tempo);
-    var temp2 = 0.;
-    let frac = modf(tempo / 2.0, &temp2);
+// // There are currently no function for x % 2 in wgpu
+// fn even(uv: f32) -> f32 {
+//     // var tempo: f32 = 0.0;
+//     // let whatever = modf(uv + 1.0, &tempo);
+//     // var temp2 = 0.;
+//     // let frac = modf(tempo / 2.0, &temp2);
 
-    if abs(frac) < 0.001 {
-        return 1.0;
-    } else {
-        return 0.0;
-    }
+//     // if abs(frac) < 0.001 {
+//     //     return 1.0;
+//     // } else {
+//     //     return 0.0;
+//     // }
+
+//     return 1.0;
+// }
+
+fn even(uv: f32) -> f32 {
+    let whole = floor(uv + 1.0);
+    return select(0.0, 1.0, abs((whole / 2.0) % 1.0) < 0.001);
 }
+
 
 //////////////////////// sdfs //////////////////////////////////////
 
@@ -321,7 +332,9 @@ fn draw_circle(
 
 
 @fragment
-fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
+fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
+
+
 
     // ///////////////////// coordinates /////////////////////////////////
     let x_max = mate.bound_up.x;
@@ -390,8 +403,10 @@ fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
     // This will change in the future.
     var temp_y: f32 = 0.0;
     var temp_x: f32 = 0.0;
-    let sad_x = modf(tiki.x, &temp_x);
-    let sad_y = modf(tiki.y, &temp_y);
+    // let sad_x = modf(tiki.x, &temp_x);
+    // let sad_y = modf(tiki.y, &temp_y);
+    let sad_x = tiki.x % 1.0;
+    let sad_y = tiki.y % 1.0;
 
 
     let ggg = -vec2<f32>(sad_x, sad_y) ;
@@ -472,11 +487,11 @@ fn fragment(in: FragmentInput) -> @location(0) vec4<f32> {
         let colBackground3 = vec4<f32>(colBackground2.xyz, 0.0);
         rect = mix(rect, colBackground3, s);
 
-        let r = 0.02 * so.x;
-        let d = sdRoundedBox(uv_pix - mate.position, so / 2.0, vec4<f32>(r, r, r, r));
-        let s = smoothstep(0.0, 2.0, abs(d) - 1.0);
+        let r2 = 0.02 * so.x;
+        let d2 = sdRoundedBox(uv_pix - mate.position, so / 2.0, vec4<f32>(r2, r2, r2, r2));
+        let s2 = smoothstep(0.0, 2.0, abs(d2) - 1.0);
 
-        rect = mix(rect, vec4<f32>(0.0, 0.0, 0.0, 1.0), 1.0 - s);
+        rect = mix(rect, vec4<f32>(0.0, 0.0, 0.0, 1.0), 1.0 - s2);
     }
     /////////////////// contours /////////////////////////
 

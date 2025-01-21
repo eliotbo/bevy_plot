@@ -1,4 +1,5 @@
 use bevy::asset::Asset;
+use bevy::asset::AssetPlugin;
 use bevy::{
     // asset::Assets,
     prelude::*,
@@ -42,7 +43,7 @@ impl Plugin for PlotPlugin {
     fn build(&self, app: &mut App) {
         app
             // canvas
-            .add_plugins(Material2dPlugin::<CanvasMaterial>::default())
+            .add_plugins((Material2dPlugin::<CanvasMaterial>::default()))
             // .add_plugin(MarkerMesh2dPlugin)
             // .add_plugin(BezierMesh2dPlugin)
             // .add_plugin(SegmentMesh2dPlugin)
@@ -53,7 +54,7 @@ impl Plugin for PlotPlugin {
             .add_event::<RespawnAllEvent>()
             .add_event::<WaitForUpdatePlotLabelsEvent>()
             .add_event::<UpdateTargetLabelEvent>()
-            .add_event::<UpdateBezierShaderEvent>()
+            // .add_event::<UpdateBezierShaderEvent>()
             // .add_event::<SpawnBezierCurveEvent>()
             // .add_asset::<Plot>()
             .insert_resource(ColorPalette::default())
@@ -467,6 +468,15 @@ impl PlotMap {
     }
 
     pub fn insert(&mut self, id: PlotId, plot: Plot) {
+        self.plots.insert(id, plot);
+    }
+
+    pub fn add(&mut self, mut plot: Plot) {
+        // generate a new id
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+        let id = rng.gen();
+        plot.id = id;
         self.plots.insert(id, plot);
     }
 }

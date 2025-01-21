@@ -126,7 +126,7 @@ impl CanvasParams {
         }
     }
 
-    pub(crate) fn hovered_on_plot_edges(&self, position: Vec2, window_entity: Entity, mut commands: Commands) {
+    pub(crate) fn hovered_on_plot_edges(&self, position: Vec2, window_entity: Entity, mut commands: &mut Commands) {
         let size = self.original_size * self.scale;
 
         let top_right = self.position + Vec2::new(size.x / 2.0, size.y / 2.0);
@@ -192,7 +192,7 @@ pub(crate) struct UpdatePlotLabelsEvent {
 pub(crate) struct UpdateTargetLabelEvent {
     pub plot_id: PlotId,
     pub canvas_entity: Entity,
-    pub canvas_material_handle: Handle<CanvasMaterial>,
+    pub canvas_material_handle: MeshMaterial2d<CanvasMaterial>,
     // pub mouse_pos: Vec2,
 }
 

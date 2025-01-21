@@ -3,26 +3,38 @@ use bevy_plot::*;
 
 fn main() {
     App::new()
-        .insert_resource(WindowDescriptor {
-            width: 800.,
-            height: 600.,
-            ..Default::default()
-        })
-        .add_plugins(DefaultPlugins)
-        .add_plugin(PlotPlugin)
-        .add_startup_system(setup)
+        // .insert_resource(WindowDescriptor {
+        //     width: 800.,
+        //     height: 600.,
+        //     ..Default::default()
+        // })
+        .add_plugins((
+            PlotPlugin,
+            DefaultPlugins.set(WindowPlugin {
+                primary_window: Some(Window {
+                    title: "I am a window!".into(),
+                    name: Some("bevy.app".into()),
+                    resolution: (800., 600.).into(),
+
+                    ..default()
+                }),
+                ..default()
+            }),
+        ))
+        .add_systems(Startup, setup)
         .run();
 }
 
 fn setup(
     mut commands: Commands,
-    mut plots: ResMut<Assets<Plot>>,
-    asset_server: Res<AssetServer>,
-    mut maybe_font: ResMut<TickLabelFont>,
+    mut plots: ResMut<PlotMap>,
+    // asset_server: Res<AssetServer>,
+    // mut maybe_font: ResMut<TickLabelFont>,
 ) {
-    commands.spawn_bundle(Camera2dBundle::default());
-    let font: Handle<Font> = asset_server.load("fonts/Roboto-Bold.ttf");
-    maybe_font.maybe_font = Some(font);
+    commands.spawn(Camera2d::default());
+
+    // let font: Handle<Font> = asset_server.load("fonts/Roboto-Bold.ttf");
+    // maybe_font.maybe_font = Some(font);
 
     let mut plot = Plot::default();
     plot.canvas_size = Vec2::new(790.0, 590.0);
@@ -44,8 +56,7 @@ fn setup(
     // note that a closure would work as well
     plot.plot_func(easing_func);
 
-    let plot_handle = plots.add(plot.clone());
-    commands.spawn().insert(plot_handle);
+    plots.add(plot.clone());
 }
 
 // The function is not animated, so we don't use the time variable t.
