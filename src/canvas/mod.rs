@@ -198,6 +198,9 @@ pub(crate) struct UpdateTargetLabelEvent {
 
 #[derive(Asset, TypePath, AsBindGroup, Debug, Clone)]
 pub(crate) struct CanvasMaterial {
+    #[uniform(1)]
+    pub position: Vec2,
+
     /// Mouse position in the reference frame of the graph, corresponding to its axes coordinates
     #[uniform(0)]
     pub mouse_pos: Vec2,
@@ -218,8 +221,7 @@ pub(crate) struct CanvasMaterial {
     pub size: Vec2,
     #[uniform(0)]
     pub outer_border: Vec2,
-    #[uniform(0)]
-    pub position: Vec2,
+
     #[uniform(0)]
     pub show_target: f32,
     #[uniform(0)]
@@ -286,6 +288,7 @@ impl CanvasMaterial {
         } else {
             0.0
         };
+        // let v = Vec2::new(.x, plot.target_position.y);
         self.target_pos = plot.to_local(plot.target_position) + plot.canvas_position;
 
         self.background_color1 = col_to_vec4(plot.background_color1);
@@ -322,5 +325,9 @@ impl Material2d for CanvasMaterial {
     fn fragment_shader() -> ShaderRef {
         // For example if you keep canvas.wgsl in assets/canvas/canvas.wgsl:
         "shaders/canvas.wgsl".into()
+    }
+
+    fn alpha_mode(&self) -> bevy::sprite::AlphaMode2d {
+        bevy::sprite::AlphaMode2d::Blend
     }
 }

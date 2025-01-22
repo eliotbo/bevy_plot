@@ -22,6 +22,9 @@ fn spawn_axis_tick_labels(
     text: &str,
     font_size: f32,
     position: Vec3,
+    // justify: JustifyText,
+    anchor: bevy::sprite::Anchor,
+
     // v_align: AlignItems,
     // h_align: AlignItems,
     font_color: Color,
@@ -44,19 +47,19 @@ fn spawn_axis_tick_labels(
     //     ..default()
     // };
 
-    let text_justification = JustifyText::Center;
+    // let text_justification = JustifyText::Center;
 
     commands.entity(plot_entity).with_children(|parent| {
         parent
             .spawn((
                 Text2d::new(text),
                 text_font,
-                TextLayout::new_with_justify(text_justification),
+                // TextLayout::new_with_justify(justify),
                 // text: Text::from_section(, text_font.clone()).with_alignment(text_alignment),
                 Transform::from_translation(position),
+                anchor,
             ))
-            .insert(PlotLabel)
-            .id();
+            .insert(PlotLabel);
     });
 }
 
@@ -70,12 +73,14 @@ pub(crate) fn update_target(
     taget_label_query: Query<Entity, With<TargetLabel>>,
     // canvas_query: Query<(Entity, &mut Handle<CanvasMaterial>, &Handle<Plot>)>,
     mut canvas_materials: ResMut<Assets<CanvasMaterial>>,
+    // font_handle: Res<TickLabelFont>,
     // mut canvas_query: Query<&mut Canvas>,
 ) {
     if let Some(event) = update_target_labels_event.read().next() {
         for entity in taget_label_query.iter() {
             commands.entity(entity).despawn();
         }
+
         // let graph_sprite = canvas_query.get_mut(event.canvas_entity).unwrap();
 
         // let size = graph_sprite.original_size;
@@ -85,10 +90,6 @@ pub(crate) fn update_target(
         // if let Some(plot) = materials.get_mut(plot_handle.clone()) {
         if let Some(plot) = plots.get_mut(&plot_id) {
             //
-            // update canvas shader
-            if let Some(canvas_mat) = canvas_materials.get_mut(&event.canvas_material_handle) {
-                canvas_mat.update_all(&plot);
-            }
 
             if plot.show_target && plot.target_toggle {
                 let target_text_z_plane = 1.2;
@@ -127,6 +128,8 @@ pub(crate) fn update_target(
                         ..default() // color: plot.target_label_color,
                     };
 
+                    let offset = Vec3::new(font_size * 0.2, font_size * 0.02, 0.0);
+
                     if !(target_position.y > upper_limits.y - font_size * 1.2
                         || target_position.y < lower_limits.y + font_size * 0.2)
                     {
@@ -135,16 +138,22 @@ pub(crate) fn update_target(
                                 .spawn((
                                     Text2d::new(target_str),
                                     text_font,
+                                    TextLayout::new_with_justify(JustifyText::Left),
                                     TextColor(plot.target_label_color),
-                                    Transform::from_translation(target_position),
+                                    Transform::from_translation(target_position + offset),
+                                    bevy::sprite::Anchor::BottomLeft,
                                 ))
-                                .insert(TargetLabel)
-                                .id();
+                                .insert(TargetLabel);
                         });
 
                         // commands.entity(plot_entity).push_children(&[label_entity]);
                     }
                 }
+            }
+
+            // update canvas shader
+            if let Some(canvas_mat) = canvas_materials.get_mut(&event.canvas_material_handle) {
+                canvas_mat.update_all(&plot);
             }
         }
     }
@@ -195,7 +204,7 @@ pub(crate) fn update_plot_labels(
                     ///////////////////////////// x_axis labels  /////////////////////////////
                     {
                         // distance from center for
-                        let center_dist_y = -graph_y / 2.0 + font_size * 1.0;
+                        let center_dist_y = -graph_y / 2.0 + font_size * 0.;
 
                         // iterate
                         let iter_x = x_edge * 2.0 / x_range;
@@ -249,11 +258,11 @@ pub(crate) fn update_plot_labels(
                             // iterator for each label
                             let x_pos = iter_x * i as f32 * plot.tick_period.x;
 
-                            let font_offset_x = -font_size * 0.2;
+                            let font_offset_x = font_size * 0.2;
                             // if the tick label is too far to the left, do not spawn it
                             if (x0 + x_pos + font_offset_x + graph_x / 2.0) > font_size * 3.0
-                        // if the tick label is too right to the left, do not spawn it
-                        && (x0 + x_pos + font_offset_x - graph_x / 2.0) < -font_size * 0.0
+                        // if the tick label is too far to the right, do not spawn it
+                        && (x0 + x_pos + font_offset_x - graph_x / 2.0) < -font_size * 3.0
                             {
                                 spawn_axis_tick_labels(
                                     &mut commands,
@@ -262,6 +271,8 @@ pub(crate) fn update_plot_labels(
                                     &x_str,
                                     font_size,
                                     Vec2::new(x0 + x_pos + font_offset_x, center_dist_y).extend(text_z_plane),
+                                    bevy::sprite::Anchor::BottomLeft,
+                                    // JustifyText::Right,
                                     // AlignItems::Start,
                                     // AlignItems::End,
                                     plot.tick_label_color,
@@ -274,7 +285,7 @@ pub(crate) fn update_plot_labels(
                     ////////////////////////////////// y_axis labels //////////////////////////////////
                     {
                         // distance from center for
-                        let center_dist_x = -graph_x / 2.0 + font_size * 0.2;
+                        let center_dist_x = -graph_x / 2.0 + font_size * 0.20;
 
                         // iterate
                         let iter_y = y_edge * 2.0 / y_range;
@@ -327,7 +338,7 @@ pub(crate) fn update_plot_labels(
                             // iterator for each label
                             let y_pos = iter_y * i as f32 * plot.tick_period.y;
 
-                            let font_offset_y = -font_size * 0.1;
+                            let font_offset_y = -font_size * 0.0;
 
                             if (y0 + y_pos + font_offset_y + graph_y / 2.0) > font_size * 1.2
                                 && (y0 + y_pos + font_offset_y - graph_y / 2.0) < -font_size * 0.0
@@ -339,6 +350,8 @@ pub(crate) fn update_plot_labels(
                                     &y_str,
                                     font_size,
                                     Vec2::new(center_dist_x, y0 + y_pos + font_offset_y).extend(0.0001),
+                                    // JustifyText::Left,
+                                    bevy::sprite::Anchor::TopLeft,
                                     // VerticalAlign::Top,
                                     // HorizontalAlign::Left,
                                     plot.tick_label_color,
@@ -404,7 +417,6 @@ pub(crate) fn spawn_graph(
                     GlobalTransform::default(),
                     // Our custom component
                     event.canvas.clone(),
-                    // MAYBE THIS NEEDS TO BE A COMPONENT. it's just a type alias for a u32 right now
                     PlotIdComponent(plot_id),
                 ))
                 .id();
@@ -469,6 +481,7 @@ pub(crate) fn update_mouse_target(
                 plot.compute_zeros();
 
                 if mouse_button_input.just_pressed(MouseButton::Middle) {
+                    // println!("target_toggle");
                     plot.target_toggle = !plot.target_toggle;
                 }
 
@@ -722,6 +735,7 @@ pub(crate) fn adjust_graph_axes(
     mut update_plot_labels_event: EventWriter<UpdatePlotLabelsEvent>,
     mut change_canvas_material_event: EventWriter<RespawnAllEvent>,
     mut update_target_labels_event: EventWriter<UpdateTargetLabelEvent>,
+    mut canvas_materials: ResMut<Assets<CanvasMaterial>>,
     // mut spawn_beziercurve_event: EventWriter<SpawnBezierCurveEvent>,
 ) {
     let delta_pixels_vec = mouse_motion_events.read().map(|e| e.delta).collect::<Vec<Vec2>>();
@@ -733,7 +747,13 @@ pub(crate) fn adjust_graph_axes(
             if let Some(plot) = plots.get_mut(&plot_id_comp.0) {
                 plot.move_axes(delta_pixels);
 
+                // println!("bounds: {:?}", plot.bounds);
+
                 plot.compute_zeros();
+
+                // if let Some(canvas_mat) = canvas_materials.get_mut(&material_handle.0) {
+                //     canvas_mat.update_all(&plot);
+                // }
 
                 update_plot_labels_event.send(UpdatePlotLabelsEvent {
                     plot_id: plot_id_comp.0,

@@ -34,7 +34,7 @@ struct GraphEditShader {
     zoom: f32,
     size: vec2<f32>,
     outer_border: vec2<f32>,
-    position: vec2<f32>,
+    // position: vec2<f32>,
     show_target: f32,
     hide_contour: f32,
     target_pos: vec2<f32>,
@@ -45,11 +45,18 @@ struct GraphEditShader {
     show_axes: f32,
 };
 
+struct GraphPosition {
+    position: vec2<f32>,
+};
+
+
 @group(0) @binding(0)
 var<uniform> view: View;
 
 @group(2) @binding(0)
 var<uniform> mate: GraphEditShader;
+
+@group(2) @binding(1) var<uniform> graph_position: GraphPosition;
 
 // @group(2) @binding(0)
 // var<uniform> mesh: Mesh2d;
@@ -135,7 +142,7 @@ fn vertex(vertex: Vertex) -> VertexOutput {
 
 fn from_pix_to_local(uv_orig: vec2<f32>) -> vec2<f32> {
 
-    var uv = (uv_orig - mate.position) ;
+    var uv = (uv_orig - graph_position.position) ;
 
     let x_max = mate.bound_up.x;
     let y_max = mate.bound_up.y;
@@ -160,7 +167,7 @@ fn from_pix_to_local(uv_orig: vec2<f32>) -> vec2<f32> {
 
 // fn from_pix_to_local(uv_orig: vec2<f32>) -> vec2<f32> {
 
-//     // var uv = (uv_orig - mate.position) ;
+//     // var uv = (uv_orig - graph_position.position) ;
 //     var uv = (uv_orig - vec2<f32>(0.5, 0.5)) ;
 
 //     let x_max = mate.bound_up.x;
@@ -198,6 +205,23 @@ fn from_local_to_pixels(uv_local: vec2<f32>) -> vec2<f32> {
     return uv;
 }
 
+fn from_local_to_pixels3_inv(uv_local: vec2<f32>) -> vec2<f32> {
+    var uv = uv_local;
+
+    uv.x = (uv.x - 0.5) * mate.size.x ;
+    // uv.x = uv.x / (mate.bound_up.x - mate.bound_lo.x);
+
+    uv.y = (uv.y - 0.5) * mate.size.y ;
+    // uv.y = uv.y / (mate.bound_up.y - mate.bound_lo.y);
+
+    uv = uv + graph_position.position / 2.0;
+
+
+
+    return uv;
+}
+
+
 fn from_local_to_pixels3(uv_local: vec2<f32>) -> vec2<f32> {
     var uv = uv_local;
 
@@ -207,7 +231,7 @@ fn from_local_to_pixels3(uv_local: vec2<f32>) -> vec2<f32> {
     uv.y = -(uv.y - 0.5) * mate.size.y ;
     // uv.y = uv.y / (mate.bound_up.y - mate.bound_lo.y);
 
-    uv = uv + mate.position / 2.0;
+    uv = uv + graph_position.position / 2.0;
 
 
 
@@ -348,8 +372,10 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     // ///////////////////// coordinates /////////////////////////////////
 
     let uv_pix = from_local_to_pixels3(in.uv);
+    // let uv_pix_inv = from_local_to_pixels3_inv(in.uv);
 
     var uv = from_pix_to_local(uv_pix) ;
+
     // var uv = in.uv;
     // var uv = uv_pix;
     // var uv = in.world_position.xy;
@@ -386,7 +412,8 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let so = mate.size / (1.0 + mate.outer_border);
     let edges = vec2<f32>(0.5, 0.5) * so;
 
-    let origin = (-mate.bound_lo / (mate.bound_up - mate.bound_lo) - 0.5) * so;
+    var origin = (-mate.bound_lo / (mate.bound_up - mate.bound_lo) - 0.5) * so;
+    // origin.y = -origin.y;
 
     let tick_period_pix = mate.tick_period / (mate.bound_up - mate.bound_lo) * so;
     let bar_alpha = 1.0;
@@ -397,7 +424,7 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     sig = vec2<f32>(1.0, 1.0);
 
     // in the tiki coordinate, 1 corresponds to one tick period
-    let tiki = (uv_pix - mate.position - origin) / tick_period_pix - vec2<f32>(0.5, 0.5) * sig ;
+    let tiki = (uv_pix - graph_position.position - origin) / tick_period_pix - vec2<f32>(0.5, 0.5) * sig ;
 
     // In wgpu currently, the mod function take a reference to a dummy variable.
     // This will change in the future.
@@ -437,12 +464,12 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     if mate.show_axes > 0.5 {
         segment.start = vec2<f32>(-edges.x, origin.y);
         segment.end = vec2<f32>(edges.x, origin.y);
-        rect = draw_segment(1.0, rect, uv_pix - mate.position, segment, black, bar_alpha) ;
+        rect = draw_segment(1.0, rect, uv_pix - graph_position.position, segment, black, bar_alpha) ;
 
 
         segment.start = vec2<f32>(origin.x, -edges.y);
         segment.end = vec2<f32>(origin.x, edges.y);
-        rect = draw_segment(1.0, rect, uv_pix - mate.position, segment, black, bar_alpha) ;
+        rect = draw_segment(1.0, rect, uv_pix - graph_position.position, segment, black, bar_alpha) ;
     }
     //////////////////////////////////////// axes //////////////////////////////
 
@@ -458,10 +485,10 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
 
     /////////////////// mouse target /////////////////////////
     if mate.show_target > 0.5 {
-        let aspect_ratio = mate.size.y / mate.size.x;
+        // let aspect_ratio = mate.size.y / mate.size.x;
 
         let target_thickness = 0.75; // mate.globals.zoom;
-        let pos_edges = edges - mate.position;
+        let pos_edges = edges - graph_position.position;
 
         segment.start = vec2<f32>(mate.target_pos.x, -pos_edges.y);
         segment.end = vec2<f32>(mate.target_pos.x, pos_edges.y);
@@ -481,14 +508,14 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
         let ax_thick = 0.8 ;
 
         let r = 0.02 * so.x;
-        let d = sdRoundedBox(uv_pix - mate.position, so / 2.0, vec4<f32>(r, r, r, r));
+        let d = sdRoundedBox(uv_pix - graph_position.position, so / 2.0, vec4<f32>(r, r, r, r));
         let s = smoothstep(0.0, 2.0, d);
 
         let colBackground3 = vec4<f32>(colBackground2.xyz, 0.0);
         rect = mix(rect, colBackground3, s);
 
         let r2 = 0.02 * so.x;
-        let d2 = sdRoundedBox(uv_pix - mate.position, so / 2.0, vec4<f32>(r2, r2, r2, r2));
+        let d2 = sdRoundedBox(uv_pix - graph_position.position, so / 2.0, vec4<f32>(r2, r2, r2, r2));
         let s2 = smoothstep(0.0, 2.0, abs(d2) - 1.0);
 
         rect = mix(rect, vec4<f32>(0.0, 0.0, 0.0, 1.0), 1.0 - s2);

@@ -28,11 +28,13 @@ bevy = { version = "0.15.1", default-features = false, features = [
     "bevy_picking",
     "bevy_text",
     "bevy_window",
+
     # "bevy_sprite_picking_backend",
 ] }
 # itertools-num = "0.1"
 # bytemuck = "1.21"
 rand = "0.8"
+bevy_framepace = "0.18"
 # bevy_picking = { version = "0.15.0-rc.3" } # why do we need this?
 # bevy_text = { version = "0.15.0" }
 # crevice = "0.11"

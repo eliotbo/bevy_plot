@@ -43,7 +43,7 @@ impl Plugin for PlotPlugin {
     fn build(&self, app: &mut App) {
         app
             // canvas
-            .add_plugins((Material2dPlugin::<CanvasMaterial>::default()))
+            .add_plugins(Material2dPlugin::<CanvasMaterial>::default())
             // .add_plugin(MarkerMesh2dPlugin)
             // .add_plugin(BezierMesh2dPlugin)
             // .add_plugin(SegmentMesh2dPlugin)
@@ -61,6 +61,7 @@ impl Plugin for PlotPlugin {
             .insert_resource(Cursor::default())
             .insert_resource(TickLabelFont { maybe_font: None })
             .insert_resource(PlotMap::default())
+            // .insert_resource(Time::<Fixed>::from_hz(240.0))
             .add_systems(
                 Update,
                 (
@@ -77,19 +78,19 @@ impl Plugin for PlotPlugin {
                     // spawn_bezier_function,
                     wait_for_graph_spawn
                 )
-                    .before(release_all),
+                    .before(update_target),
             )
             .add_systems(
                 Update,
                 (
                     release_all,
+                    do_spawn_plot,
+                    update_target,
+                    update_mouse_target,
                     spawn_graph,
                     adjust_graph_size,
-                    record_mouse_events_system,
-                    update_mouse_target,
                     update_plot_labels,
-                    update_target,
-                    do_spawn_plot,
+                    record_mouse_events_system,
                     // animate_bezier,
                 ),
             );
@@ -405,6 +406,9 @@ impl LineStyle {
     }
 }
 
+// #[derive(Resource)]
+// pub struct FontHandle(pub Handle<Font>);
+
 /// Options for customizing the appearance of the plot.
 #[derive(Debug, Clone, PartialEq)]
 // Options as the second argument the of plotop method
@@ -571,6 +575,7 @@ impl Default for Plot {
         use rand::Rng;
         let mut rng = rand::thread_rng();
         let id = rng.gen();
+        let mult = 3.0;
 
         let mut plot = Plot {
             id,
@@ -588,19 +593,20 @@ impl Default for Plot {
             zoom: 1.0,
 
             show_grid: true,
-            background_color1: Color::srgba(0.048, 0.00468, 0.0744, 1.0),
-            background_color2: Color::srgba(0.0244, 0.0023, 0.0372, 1.0),
-
+            // background_color1: Color::srgba(0.048, 0.00468, 0.0744, 1.0),
+            // background_color2: Color::srgba(0.0244, 0.0023, 0.0372, 1.0),
+            background_color1: Color::srgba(0.048 * mult, 0.00468 * mult, 0.0744 * mult, 1.0),
+            background_color2: Color::srgba(0.0244 * mult, 0.0023 * mult, 0.0372 * mult, 1.0),
             canvas_size: size.clone(),
             outer_border: Vec2::new(0.03 * size.y / size.x, 0.03),
             zero_world: Vec2::new(0.0, 0.0),
 
             hide_contour: false,
             hide_tick_labels: false,
-            hide_half_ticks: true,
+            hide_half_ticks: false,
             significant_digits: 2,
             show_axes: true,
-            show_target: false,
+            show_target: true,
             target_toggle: false,
             tick_label_color: Color::BLACK,
             target_label_color: Color::srgba(0.5, 0.5, 0.5, 1.0),
@@ -866,7 +872,8 @@ impl Plot {
         self.zoom *= multiplier;
     }
 
-    pub(crate) fn move_axes(&mut self, mouse_delta: Vec2) {
+    pub(crate) fn move_axes(&mut self, mut mouse_delta: Vec2) {
+        mouse_delta.y *= 1.0;
         let mut axes = self.delta_axes();
         axes.x *= -1.0;
         let size = self.canvas_size / (1. + self.outer_border);
@@ -987,8 +994,9 @@ impl Plot {
     }
 
     /// Convert a point in world coordinates to a point in the graph coordinates.
-    pub fn world_to_plot(&self, y: Vec2) -> Vec2 {
-        (y - self.zero_world - self.canvas_position) * (self.bounds.up - self.bounds.lo) / self.canvas_size
+    pub fn world_to_plot(&self, v: Vec2) -> Vec2 {
+        let v = Vec2::new(v.x, -v.y);
+        (v - self.zero_world - self.canvas_position) * (self.bounds.up - self.bounds.lo) / self.canvas_size
             * (1.0 + self.outer_border)
     }
 }
