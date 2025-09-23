@@ -1,0 +1,20 @@
+[package]
+name = "bevy_plot2"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "bevy_plot2"
+path = "src/lib.rs"
+
+[[bin]]
+name = "canvas_demo"
+path = "src/bin/canvas_demo.rs"
+
+[[bin]]
+name = "canvas_demo_simple"
+path = "src/bin/canvas_demo_simple.rs"
+
+[dependencies]
+bevy = { version = "0.16", features = ["bevy_dev_tools"] }
+bytemuck = "1.14"
